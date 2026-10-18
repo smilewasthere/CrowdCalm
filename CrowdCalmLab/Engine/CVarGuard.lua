@@ -133,6 +133,13 @@ function Guard.HeldCount()
   return n
 end
 
+function Guard.HasBaseline()
+  return type(ns.db) == "table"
+    and type(ns.db.baseline) == "table"
+    and type(ns.db.baseline.values) == "table"
+    and next(ns.db.baseline.values) ~= nil
+end
+
 local function ensureHeld()
   if not held then
     held = { names = {} }
@@ -383,38 +390,47 @@ function Guard.CaptureBaselineIfIdle()
   return any
 end
 
--- At login, compare live values to the baseline saved at the last clean
--- logout. If a mismatch looks like our own test value (db.lastApplied),
--- offer "Restore my settings" — never auto-overwrite (section 4.9).
-function Guard.CompareBaselineOnLogin()
+-- Returns the mismatch list without prompting (used by the footer button).
+function Guard.Mismatches()
   if not ns.db or type(ns.db.baseline) ~= "table" or type(ns.db.baseline.values) ~= "table" then
-    Guard.CaptureBaselineIfIdle()
     return nil
   end
   local mismatches = {}
   local n = 0
-  local testLike = 0
   for key, baselineValue in pairs(ns.db.baseline.values) do
     local current = Guard.Read(key)
     if current ~= nil and not valuesEqual(current, baselineValue) then
       n = n + 1
-      local looksLikeTest = false
-      if ns.db.lastApplied and ns.db.lastApplied[key] ~= nil then
-        looksLikeTest = valuesEqual(current, ns.db.lastApplied[key])
-      end
       mismatches[n] = {
         key = key,
         baseline = tostring(baselineValue),
         current = tostring(current),
-        testLike = looksLikeTest,
+        testLike = (ns.db.lastApplied and ns.db.lastApplied[key] ~= nil)
+          and valuesEqual(current, ns.db.lastApplied[key]) or false,
       }
-      if looksLikeTest then
-        testLike = testLike + 1
-      end
     end
   end
   if n == 0 then
     return nil
+  end
+  return mismatches
+end
+
+-- At login, compare live values to the baseline saved at the last clean
+-- logout. If a mismatch looks like our own test value (db.lastApplied),
+-- offer "Restore my settings" — never auto-overwrite (section 4.9).
+function Guard.CompareBaselineOnLogin()
+  local mismatches = Guard.Mismatches()
+  if not mismatches then
+    Guard.CaptureBaselineIfIdle()
+    return nil
+  end
+  local n = #mismatches
+  local testLike = 0
+  for i = 1, n do
+    if mismatches[i].testLike then
+      testLike = testLike + 1
+    end
   end
   local payload = { all = mismatches, count = n, testLike = testLike }
   if testLike > 0 and Guard.restorePromptHandler then

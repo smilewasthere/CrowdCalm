@@ -9,6 +9,8 @@ std = "lua51"
 globals = {
   "CrowdCalmLabDB",
   "CrowdCalmLab_OnAddonCompartmentClick",
+  "SLASH_CCL1",
+  "SLASH_CCL2",
 }
 
 -- Read-only WoW API surface used by the addon.
@@ -32,6 +34,9 @@ read_globals = {
   "GetNumGroupMembers",
   "SlashCmdList",
   "PlaySound",
+  "SOUNDKIT",
+  "YES",
+  "NO",
   "StaticPopupDialogs",
   "StaticPopup_Show",
   "StaticPopup_Hide",
