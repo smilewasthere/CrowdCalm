@@ -1,0 +1,53 @@
+describe("Stutter", function()
+  local ns = stub.newNs()
+  stub.loadAddon("Stutter.lua", ns)
+
+  local function make(settings)
+    return ns.Stutter.new(settings)
+  end
+
+  it("uses safe defaults when settings are missing", function()
+    local s = make()
+    expect(s.enabled):toBe(false)
+    expect(s.thresholdMs):toBe(50)
+    expect(s.minGapMs):toBe(1000)
+    expect(s.maxEntries):toBe(100)
+  end)
+
+  it("logs only deltas strictly above the threshold", function()
+    local s = make({ thresholdMs = 50 })
+    s:SetEnabled(true, 0)
+    expect(s:ShouldLog(50, 10)):toBe(false)
+    expect(s:ShouldLog(49.9, 11)):toBe(false)
+    expect(s:ShouldLog(50.1, 12)):toBe(true)
+  end)
+
+  it("rate-limits logs to one per minGapMs", function()
+    local s = make({ thresholdMs = 50, minGapMs = 1000 })
+    s:SetEnabled(true, 0)
+    expect(s:ShouldLog(80, 10)):toBe(true)
+    expect(s:ShouldLog(80, 100)):toBe(false)
+    expect(s:ShouldLog(80, 1009.9)):toBe(false)
+    expect(s:ShouldLog(80, 1010)):toBe(true)
+  end)
+
+  it("drops the oldest entries beyond maxEntries", function()
+    local s = make({ maxEntries = 100 })
+    for i = 1, 105 do
+      s:Add({ t = i, deltaMs = 80 })
+    end
+    local entries = s:GetEntries()
+    expect(#entries):toBe(100)
+    expect(entries[1].t):toBe(6)
+    expect(entries[#entries].t):toBe(105)
+  end)
+
+  it("never logs while disabled, and enabling allows an immediate hit", function()
+    local s = make({ thresholdMs = 50 })
+    expect(s:ShouldLog(80, 10)):toBe(false)
+    s:SetEnabled(true, 20)
+    expect(s:ShouldLog(80, 20)):toBe(true)
+    s:SetEnabled(false, 21)
+    expect(s:ShouldLog(80, 99999)):toBe(false)
+  end)
+end)

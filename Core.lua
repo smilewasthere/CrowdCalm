@@ -213,6 +213,37 @@ function Core._scheduleSpellDensityReapply()
   end)
 end
 
+local function stutterOnUpdate()
+  local now = GetTime()
+  local deltaMs = (now - (Core.lastFrameTime or now)) * 1000
+  Core.lastFrameTime = now
+  if Core.stutter:ShouldLog(deltaMs, now) then
+    Core.stutter:Add({
+      t = now,
+      deltaMs = deltaMs,
+      context = {
+        zone = GetZoneText(),
+        mode = Core.crowd and Core.crowd:GetMode() or "normal",
+        sinceSwitch = now - (Core.lastModeChange or now),
+      },
+    })
+  end
+end
+
+function Core._syncStutterHook()
+  local settings = Core.sv.settings.stutter
+  Core.stutter:SetEnabled(settings.enabled, GetTime())
+  Core.lastFrameTime = nil
+  if not Core.frame then
+    return
+  end
+  if settings.enabled then
+    Core.frame:SetScript("OnUpdate", stutterOnUpdate)
+  else
+    Core.frame:SetScript("OnUpdate", nil)
+  end
+end
+
 function Core._tick(now)
   if not Core.switch or not Core.sv then
     return
@@ -230,8 +261,12 @@ function Core._tick(now)
     return
   end
 
-  Core.crowd:Update(now, count)
-  Core.switch:Request(Core.crowd:GetMode())
+  local mode = Core.crowd:Update(now, count)
+  if mode ~= Core.lastMode then
+    Core.lastMode = mode
+    Core.lastModeChange = now
+  end
+  Core.switch:Request(mode)
   Core.switch:TryApply()
 
   Core.tickCount = Core.tickCount + 1
@@ -292,8 +327,11 @@ local function init()
 
   Core.sv = db
   Core.crowd = ns.Crowd.new(db.settings)
+  Core.stutter = ns.Stutter.new(db.settings.stutter)
   Core.tickCount = 0
   Core.restingSince = nil
+  Core.lastMode = nil
+  Core.lastModeChange = GetTime()
   Core.switch = nil
 
   Core.RebuildSwitch()
@@ -305,6 +343,7 @@ local function init()
   Core._persistState()
 
   createFrame()
+  Core._syncStutterHook()
 end
 
 function Core._handleEvent(event, ...)

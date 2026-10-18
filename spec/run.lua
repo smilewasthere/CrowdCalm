@@ -14,6 +14,7 @@ local specs = {
   "profiles_spec",
   "restore_spec",
   "switch_spec",
+  "stutter_spec",
   "core_spec",
 }
 

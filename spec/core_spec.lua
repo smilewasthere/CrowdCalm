@@ -4,6 +4,7 @@ describe("Core", function()
   stub.loadAddon("Profiles.lua", ns)
   stub.loadAddon("Restore.lua", ns)
   stub.loadAddon("Switch.lua", ns)
+  stub.loadAddon("Stutter.lua", ns)
   stub.loadAddon("Core.lua", ns)
 
   local BASELINES = {
@@ -23,9 +24,14 @@ describe("Core", function()
     end
   end
 
-  local function login(except)
+  local function resetSession()
     stub.reset()
     _G.CrowdCalmDB = nil
+    ns.Core.frame = nil
+  end
+
+  local function login(except)
+    resetSession()
     primeKnown(except)
     ns.Core._handleEvent("ADDON_LOADED", "CrowdCalm")
   end
@@ -108,7 +114,7 @@ describe("Core", function()
   end)
 
   it("restores persisted applied values at the next login after a crash", function()
-    stub.reset()
+    resetSession()
     primeKnown()
     stub.state.cvars.particleDensity = "25"
     _G.CrowdCalmDB = {
@@ -128,7 +134,7 @@ describe("Core", function()
   end)
 
   it("adopts hand-edited values at the next login instead of overwriting", function()
-    stub.reset()
+    resetSession()
     primeKnown()
     stub.state.cvars.particleDensity = "50"
     _G.CrowdCalmDB = {
@@ -158,7 +164,7 @@ describe("Core", function()
   end)
 
   it("re-applies spell density after entering world while crowd persists", function()
-    stub.reset()
+    resetSession()
     primeKnown()
     _G.CrowdCalmDB = {
       schemaVersion = 1,
@@ -181,7 +187,7 @@ describe("Core", function()
   end)
 
   it("does not re-apply spell density when no crowd is engaged", function()
-    stub.reset()
+    resetSession()
     primeKnown()
     _G.CrowdCalmDB = {
       schemaVersion = 1,
@@ -223,5 +229,34 @@ describe("Core", function()
     ns.Core._tick(25.1)
     expect(#stub.state.callLog):toBe(10)
     expect(C_CVar.GetCVar("particleDensity")):toBe("100")
+  end)
+
+  it("attaches a stutter OnUpdate hook when enabled and logs slow frames", function()
+    resetSession()
+    primeKnown()
+    _G.CrowdCalmDB = { schemaVersion = 1, settings = { stutter = { enabled = true } } }
+    ns.Core._handleEvent("ADDON_LOADED", "CrowdCalm")
+    local frame = stub.state.framesByName["CrowdCalmFrame"]
+    expect(frame):toBeTruthy()
+    local onUpdate = frame:GetScript("OnUpdate")
+    expect(onUpdate):toBeTruthy()
+    stub.state.time = 10
+    onUpdate(frame, 0.016)
+    stub.state.time = 10.08
+    onUpdate(frame, 0.08)
+    stub.state.time = 10.2
+    onUpdate(frame, 0.12)
+    local entries = ns.Core.stutter:GetEntries()
+    expect(#entries):toBe(1)
+    expect(entries[1].deltaMs > 50):toBe(true)
+    expect(entries[1].context.zone):toBe("Test Zone")
+    expect(entries[1].context.mode):toBe("normal")
+  end)
+
+  it("leaves the frame without an OnUpdate hook when stutter logging is disabled", function()
+    login()
+    local frame = stub.state.framesByName["CrowdCalmFrame"]
+    expect(frame):toBeTruthy()
+    expect(frame:GetScript("OnUpdate")):toBeNil()
   end)
 end)
