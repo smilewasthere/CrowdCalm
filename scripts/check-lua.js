@@ -10,6 +10,9 @@
 //   6. (G4) Locale: ns.L must be callable (__call present) because the
 //      codebase calls L("key"); missing literal locale keys warn (fallback
 //      renders the key text by design, so they are warnings not failures).
+//   7. (G5) Glyphs: string literals may only contain Latin-1 (<= U+00FF)
+//      plus U+2014 (em dash). The WoW client font subset renders those and
+//      nothing else; e.g. U+2192 (->) draws as a tofu box in game.
 // Usage: node scripts/check-lua.js [--fixture]
 //   --fixture  parse scripts/fixtures/broken.lua instead; the gate must exit
 //              non-zero (proves the gate can fail).
@@ -137,9 +140,9 @@ function checkMedia() {
 function parseFile(file, label) {
   const src = fs.readFileSync(file, "utf8");
   try {
-    luaparse.parse(src, { luaVersion: "5.1", locations: true });
+    const ast = luaparse.parse(src, { luaVersion: "5.1", locations: true });
     ok("parse " + label);
-    return true;
+    return ast;
   } catch (e) {
     fail(
       "parse " +
@@ -150,6 +153,122 @@ function parseFile(file, label) {
         e.message
     );
     return false;
+  }
+}
+
+// --- G5: glyph safety (Latin-1 + em dash only) ----------------------------
+// luaparse 0.3.1 gives StringLiteral { value: null, raw: "\"hi\"" }, so the
+// raw literal must be decoded here (Lua 5.1 escapes incl. \ddd) before the
+// code-point scan; otherwise an escaped non-Latin char would slip through.
+function luaStringValue(raw) {
+  if (typeof raw !== "string" || raw.length < 2) return raw || "";
+  const quote = raw[0];
+  if (quote === '"' || quote === "'") {
+    let out = "";
+    const end = raw.length - 1; // closing quote
+    let i = 1;
+    while (i < end) {
+      let c = raw[i];
+      if (c !== "\\") {
+        out += c;
+        i += 1;
+        continue;
+      }
+      i += 1;
+      if (i >= end) break;
+      const e = raw[i];
+      if (e === "a") out += "\x07";
+      else if (e === "b") out += "\x08";
+      else if (e === "f") out += "\x0c";
+      else if (e === "n") out += "\n";
+      else if (e === "r") out += "\r";
+      else if (e === "t") out += "\t";
+      else if (e === "v") out += "\x0b";
+      else if (e === "\n") out += "\n";
+      else if (e === "\r") {
+        out += "\n";
+        i += 1;
+      } else if (e >= "0" && e <= "9") {
+        let digits = e;
+        while (
+          digits.length < 3 &&
+          i + 1 < end &&
+          raw[i + 1] >= "0" &&
+          raw[i + 1] <= "9"
+        ) {
+          i += 1;
+          digits += raw[i];
+        }
+        out += String.fromCharCode(parseInt(digits, 10));
+      } else {
+        out += e;
+      }
+      i += 1;
+    }
+    return out;
+  }
+  const m = raw.match(/^\[(=*)\[/);
+  if (m) {
+    const closer = "]" + m[1] + "]";
+    return raw.slice(m[0].length, raw.length - closer.length);
+  }
+  return raw;
+}
+
+function walkStringLiterals(node, cb) {
+  if (node === null || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const n of node) walkStringLiterals(n, cb);
+    return;
+  }
+  if (
+    node.type === "StringLiteral" &&
+    typeof node.raw === "string"
+  ) {
+    cb(node);
+  }
+  for (const key of Object.keys(node)) {
+    if (key === "loc" || key === "range") continue;
+    walkStringLiterals(node[key], cb);
+  }
+}
+
+const GLYPH_ALLOWED_EM_DASH = 0x2014; // renders in the WoW font subset
+
+function checkGlyphs(asts) {
+  // asts: [{ label, ast }] for files that parsed successfully.
+  let problems = 0;
+  let strings = 0;
+  for (const entry of asts) {
+    walkStringLiterals(entry.ast, (node) => {
+      strings += 1;
+      const v = luaStringValue(node.raw);
+      for (let i = 0; i < v.length; i++) {
+        const cp = v.charCodeAt(i);
+        if (cp > 0xff && cp !== GLYPH_ALLOWED_EM_DASH) {
+          problems += 1;
+          const line = node.loc && node.loc.start ? node.loc.start.line : "?";
+          fail(
+            "glyph " +
+              entry.label +
+              ":" +
+              line +
+              " U+" +
+              cp.toString(16).toUpperCase().padStart(4, "0") +
+              " (" +
+              JSON.stringify(v[i]) +
+              ") in string " +
+              JSON.stringify(v.length > 40 ? v.slice(0, 40) + "..." : v) +
+              " (allowed: ASCII/Latin-1 + em dash U+2014)"
+          );
+        }
+      }
+    });
+  }
+  if (problems === 0) {
+    ok(
+      "glyph check (" + strings + " string literals, 0 out-of-range chars)"
+    );
   }
 }
 
@@ -294,12 +413,15 @@ function main() {
   const luaFiles = fs.existsSync(addonDir) ? listLua(addonDir, []) : [];
   const listedSet = new Set(listed.map((s) => s.toLowerCase()));
   let allParsed = true;
+  const asts = [];
   for (const file of luaFiles) {
     const rel = path.relative(addonDir, file).replace(/\\/g, "\\");
     if (!listedSet.has(rel.toLowerCase())) {
       fail("lua file not listed in TOC: " + rel);
     }
-    allParsed = parseFile(file, rel) && allParsed;
+    const ast = parseFile(file, rel);
+    if (ast) asts.push({ label: rel, ast });
+    allParsed = ast && allParsed;
   }
 
   // --- G3 media manifest ------------------------------------------------
@@ -307,6 +429,9 @@ function main() {
 
   // --- G4 locale callability + key coverage -----------------------------
   checkLocale(luaFiles);
+
+  // --- G5 glyph safety --------------------------------------------------
+  checkGlyphs(asts);
 
   report(luaFiles.length, listed.length);
 }

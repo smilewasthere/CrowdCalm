@@ -37,6 +37,27 @@ function UI.RegisterPage(def)
   pageDefs[def.index] = def
 end
 
+-- Any chrome region (title bar, footer, main frame) can move the window;
+-- before 1.0.0-pre.3 only mouse-free gaps did, which read as "it doesn't
+-- move" (owner feedback on the pre.2 build).
+local function enableWindowDrag(handle)
+  handle:EnableMouse(true)
+  handle:RegisterForDrag("LeftButton")
+  handle:SetScript("OnDragStart", function()
+    if frame then
+      frame:StartMoving()
+    end
+  end)
+  handle:SetScript("OnDragStop", function()
+    if not frame then
+      return
+    end
+    frame:StopMovingOrSizing()
+    local point, _, _, x, y = frame:GetPoint()
+    ns.db.ui.point = { point = point, x = x, y = y }
+  end)
+end
+
 -- --------------------------------------------------------- header ----
 
 local function buildHeader(parent)
@@ -108,6 +129,10 @@ local function buildHeader(parent)
   })
   closeBtn:SetWidth(64)
   closeBtn:SetPoint("RIGHT", header, "RIGHT", -14, 0)
+  Widgets.TooltipLines(header, function()
+    return { L("drag_hint"), "Esc closes the window" }
+  end)
+  enableWindowDrag(header)
   return header
 end
 
@@ -207,6 +232,9 @@ function UI.ShowBanner(text, colorName, seconds)
   bannerFrame.text:SetText(text or "")
   Skin.ColorText(bannerFrame.text, color)
   bannerFrame:Show()
+  -- pages are created after the banner and would otherwise draw over it
+  -- (pre.3: "Lab running" banner hidden behind the Lab page cover)
+  bannerFrame:Raise()
   if bannerTimer then
     bannerTimer:Cancel()
     bannerTimer = nil
@@ -244,6 +272,7 @@ local function buildFooter(parent)
   })
   restore:SetWidth(180)
   restore:SetPoint("RIGHT", footer, "RIGHT", -14, 0)
+  enableWindowDrag(footer)
   return footer
 end
 
@@ -354,16 +383,11 @@ local function buildWindow()
   frame = CreateFrame("Frame", "CrowdCalmLabFrame", UIParent)
   frame:SetSize(MAIN_W, MAIN_H)
   frame:SetPoint("CENTER")
+  -- HIGH keeps the window above world-layer UI (action bars, minimap,
+  -- coordinates) that overlapped it in the pre.2 build (owner feedback).
+  frame:SetFrameStrata("HIGH")
   frame:SetMovable(true)
-  frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", function(self)
-    self:StartMoving()
-  end)
-  frame:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-    local point, _, _, x, y = self:GetPoint()
-    ns.db.ui.point = { point = point, x = x, y = y }
-  end)
+  enableWindowDrag(frame)
   pcall(frame.SetClampedToScreen, frame, true)
   if not pcall(frame.SetResizeBounds, frame, MIN_W, MIN_H, 2400, 1600) then
     pcall(frame.SetMinResize, frame, MIN_W, MIN_H)
@@ -411,6 +435,7 @@ local function buildWindow()
   end)
 
   frame:SetScript("OnShow", function()
+    frame:Raise() -- stay on top within its strata across repeated open/close
     if not updateTicker then
       updateTicker = Util.AcquireTicker("mainwindow-update", 1.0, function()
         local okTick, tickErr = pcall(function()

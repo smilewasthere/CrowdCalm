@@ -128,3 +128,36 @@ note the result in this file (or tell the addon author).
     orbits it and the angle survives `/reload`; Settings -> "Show
     minimap button" hides and shows it immediately.
     `/dump CrowdCalmLabMinimapButton ~= nil`
+
+## pre.3 owner-feedback items
+
+28. **Do the header and footer of the window drag it?** Grab the empty
+    area of the title bar (left of the chip) and of the footer (left of
+    the Restore button) and move the mouse; the window should follow,
+    the position should survive `/reload`, and hovering should show the
+    "Drag here..." tooltip.
+29. **Does the window now sit above game UI?** With action bars /
+    minimap / coordinates visible, open the window over them: the bars
+    must draw *under* the window. Also open and close it a few times —
+    it should come back on top each time (`Raise` on show).
+30. **Does the Lab running cover block the page?** Start a run: the tile
+    grid must disappear behind a near-opaque cover immediately (not
+    after a second), clicks on the covered area must do nothing, and
+    Cancel (wide, bottom-center) must hide the cover instantly. The
+    "Lab running" banner at the top must remain visible above the cover.
+31. **Do Quick / Thorough / Run Lab no longer overlap?** On the Lab page
+    the four controls form one row at the bottom-right; none of their
+    borders may intersect. Combine checkbox sits above them, left.
+32. **Does Results explain what to change?** After a run, the top panel
+    must name the best change with its tested values ("set X to Y (it
+    is Z now)"); each card must show a colored chip (Worth it / No gain /
+    Re-test / Can't test / Hitch), a "Change 4 to 3 ..." line, and a
+    Confidence tooltip explaining Low / Medium / High. Copy report must
+    start with `RECOMMEND:` lines. Rows from pre.3-era runs simply omit
+    the change line (older saves have no stored values).
+33. **Does the Addons page fill itself?** Open it fresh (not in combat):
+    the list should populate within a second without clicking anything,
+    and the top-right label should read "N addons · sorted by CPU".
+    If opened during combat, it must fill itself automatically when
+    combat ends. The "No addons found." icon must sit in the middle of
+    the page, not over the caveat text.

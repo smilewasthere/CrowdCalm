@@ -105,6 +105,25 @@ intentional globals are:
    (`def.create(container)`), so create-time `GetWidth()` math is valid —
    this differs from the brief's "lazy create a frame" phrasing but is
    required for the timeline strip and paragraph wrapping to size correctly.
+9. **Glyph policy (pre.3): UI strings are Latin-1 plus the em dash.** The
+   client font subset draws nothing outside that range — a `→` (U+2192)
+   in the pre.2 Results card rendered as a tofu box (owner screenshot).
+   G5 in `scripts/check-lua.js` walks the parsed AST, decodes Lua string
+   escapes, and fails on any other code point; comments are exempt (they
+   never render). Use ASCII arrows (`->`) in copy and reports.
+10. **Window strata HIGH (pre.3, owner request: "always on top").** HIGH
+    keeps the window above world-layer UI (action bars, minimap,
+    coordinates) that overlapped it in pre.2, while staying below
+    DIALOG-strata client popups so confirmations and dropdowns still
+    win. `Raise()` on show handles repeated open/close; the minimap
+    button (MINIMAP strata) intentionally stays above the window.
+11. **Recommendation engine (pre.3): same rule for chips and panel.**
+    A row is "Worth it" only when gain >= 0.5 FPS, confidence is not
+    Low, and the row is neither noisy nor hitched; both the per-card
+    chip and the What-to-do panel call the same classifier, so they
+    can never disagree. Tested values (from -> to) are stored on each
+    row at run time; rows from older saves simply lack them and the UI
+    degrades to FPS-only sentences.
 
 ## Testing philosophy
 
@@ -112,6 +131,7 @@ Nothing in this repository has run inside WoW yet, by design (the owner
 installs the addon personally). Every unverified API assumption is listed
 in `docs/VERIFY.md` with a copyable `/dump` line, and every call site uses
 feature detection + `pcall` with a visible fallback. The static gates
-(G1 parse/TOC/IconTexture, G2 PowerShell parse, G3 media manifest) prove
-the repo is well-formed; the in-game behavior proof is
+(G1 parse/TOC/IconTexture, G2 PowerShell parse, G3 media manifest,
+G4 locale callability/keys, G5 glyph safety) prove the repo is
+well-formed; the in-game behavior proof is
 `docs/FIRST-RUN-CHECKLIST.md`.

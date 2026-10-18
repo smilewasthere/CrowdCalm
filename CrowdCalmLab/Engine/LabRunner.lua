@@ -113,6 +113,26 @@ local function buildRow(j, before, after, gain, noisyFlag, hitchFlag, hitchFps, 
   if j.cands[1] and j.cands[1].key then
     cost = ns.settings.costOf(j.cands[1].key)
   end
+  -- tested values (pre.3): what was actually changed, so Results can say
+  -- "set it to X (it is Y now)" instead of only reporting FPS movement.
+  local changes
+  if j.fromValues and j.lowers and not notTestable then
+    for i = 1, #j.keys do
+      local from = j.fromValues[i]
+      local to = j.lowers[i]
+      if from ~= nil and to ~= nil then
+        if not changes then
+          changes = {}
+        end
+        changes[#changes + 1] = {
+          key = j.keys[i],
+          labelKey = j.cands[i] and j.cands[i].label or nil,
+          from = from,
+          to = to,
+        }
+      end
+    end
+  end
   return {
     id = j.id,
     key = j.key,
@@ -133,6 +153,9 @@ local function buildRow(j, before, after, gain, noisyFlag, hitchFlag, hitchFps, 
     notTestable = notTestable,
     reason = reason,
     cost = cost,
+    valueFrom = j.baseValue,
+    valueTo = j.lowers and j.lowers[1] or nil,
+    changes = changes,
   }
 end
 
@@ -342,9 +365,11 @@ function ns.lab.StartJob()
   end
   j.baseValue = baseValue
   local lowers = {}
+  local fromValues = {}
   for i = 1, #j.keys do
     local cand = j.cands[i]
     local num = tonumber(ns.cvarGuard.Read(j.keys[i]))
+    fromValues[i] = num
     local lower = computeLower(cand, num)
     if lower == nil then
       rows[#rows + 1] = buildRow(j, nil, nil, nil, false, false, nil, true, "already-lowest")
@@ -359,7 +384,9 @@ function ns.lab.StartJob()
     end
     lowers[i] = lower
   end
+  j.fromValues = fromValues
   j.lowers = lowers
+  j.lower = lowers[1] -- progress.stepTo (was never set before pre.3)
   startPass()
 end
 

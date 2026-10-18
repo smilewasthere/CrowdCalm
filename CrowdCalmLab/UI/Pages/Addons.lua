@@ -224,16 +224,35 @@ local function create(parent)
     if list.Refresh then
       list:Refresh()
     end
-    sortLabel:SetText(Lfmt("addons_sorted_by", L("sort_" .. sortField) or sortField))
+    sortLabel:SetText(
+      string.format(L("addons_count"), #frame.filtered)
+        .. " · "
+        .. Lfmt("addons_sorted_by", L("sort_" .. sortField) or sortField)
+    )
   end
 
   function frame.refresh()
     frame.applyFilter(searchBox:GetText() or "")
   end
 
+  -- auto-scan on first show; if combat blocked it (owner saw an empty list
+  -- until clicking Refresh CPU), retry once when combat ends.
+  local combatRetry = nil
   frame:SetScript("OnShow", function()
-    ns.addonCost.Refresh()
+    local ok = ns.addonCost.Refresh()
     frame.refresh()
+    if not ok and not combatRetry then
+      combatRetry = CreateFrame("Frame")
+      combatRetry:RegisterEvent("PLAYER_REGEN_ENABLED")
+      combatRetry:SetScript("OnEvent", function()
+        if combatRetry then
+          combatRetry:UnregisterEvent("PLAYER_REGEN_ENABLED")
+          combatRetry = nil
+        end
+        ns.addonCost.Refresh()
+        frame.refresh()
+      end)
+    end
   end)
   return frame
 end

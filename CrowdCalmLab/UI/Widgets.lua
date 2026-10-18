@@ -281,12 +281,14 @@ end
 function Widgets.EmptyState(parent, text)
   local frame = CreateFrame("Frame", nil, parent)
   frame:SetAllPoints(parent)
+  -- centered in the page: the pre.3 top anchor (-40) sat over the list
+  -- toolbar/caveat text (owner screenshot on the Addons page).
   local icon = frame:CreateTexture(nil, "ARTWORK")
   icon:SetTexture(ns.skin.mediaPath .. "icon.tga")
-  icon:SetSize(48, 48)
-  icon:SetPoint("TOP", frame, "TOP", 0, -40)
+  icon:SetSize(32, 32)
+  icon:SetPoint("CENTER", frame, "CENTER", 0, 12)
   local label = Widgets.Text(frame, "body", text or "")
-  label:SetPoint("TOP", icon, "BOTTOM", 0, -12)
+  label:SetPoint("TOP", icon, "BOTTOM", 0, -10)
   label:SetJustifyH("CENTER")
   frame.text = label
   return frame

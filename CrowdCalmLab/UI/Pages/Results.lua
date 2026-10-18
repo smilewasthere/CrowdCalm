@@ -1,7 +1,10 @@
 -- UI/Pages/Results.lua — ranked cards from the latest run (brief section
--- 6.3, 5.10): dual teal/amber bars, before/after, Best medal, confidence
--- badge, one plain sentence, an owner-editable visual-cost dropdown
--- (5.6), a Copy report button (5.10), and a permanently disabled
+-- 6.3, 5.10 + pre.3 owner feedback): dual teal/amber bars, before/after,
+-- Best medal, confidence badge with legend tooltip, an action chip (Worth
+-- it / No gain / Re-test / Can't test / Hitch), the tested change ("Change
+-- 7 to 6") with the setting's explanation, a What-to-do recommendation
+-- panel (5.10), an owner-editable visual-cost dropdown (5.6), a Copy report
+-- button that includes the recommendations, and a permanently disabled
 -- "Apply as crowd profile" panel.
 local ADDON_NAME, ns = ...
 
@@ -10,18 +13,98 @@ local Skin = ns.skin
 local L = ns.L
 local Lfmt = ns.Lfmt
 
+-- remove one trailing UTF-8 character (for clipping long explanation text
+-- without splitting a multibyte glyph)
+local function utf8chop(s)
+  return (s:gsub("[%z\1-\127\194-\244][\128-\191]*$", ""))
+end
+
+local function candNote(key)
+  if not key or not (ns.settings and ns.settings.candidates) then
+    return nil
+  end
+  for _, cand in ipairs(ns.settings.candidates) do
+    if cand.key == key and cand.note then
+      return L(cand.note)
+    end
+  end
+  return nil
+end
+
+-- chip classification; buildRecommendations uses the same rules so the
+-- chip and the What-to-do panel can never disagree (pre.3).
+local function classify(row)
+  if row.notTestable then
+    return "cant"
+  end
+  if row.hitch then
+    return "hitch"
+  end
+  if row.noisy or row.confidence == "Low" then
+    return "retest"
+  end
+  if row.gain and row.gain >= 0.5 then
+    return "worth"
+  end
+  return "nogain"
+end
+
+local function actionChip(card, text, color)
+  local chip = Widgets.Panel(card, { base = ns.palette.raised, borderAlpha = 0.9 })
+  chip:SetHeight(18)
+  local fs = Widgets.Text(chip, "small", text)
+  fs:SetPoint("CENTER")
+  Skin.ColorText(fs, color)
+  local accent = chip:CreateTexture(nil, "OVERLAY")
+  accent:SetWidth(2)
+  accent:SetPoint("TOPLEFT", 0, -2)
+  accent:SetPoint("BOTTOMLEFT", 0, 2)
+  accent:SetColorTexture(color.r, color.g, color.b, 1)
+  chip:SetWidth(fs:GetStringWidth() + 22)
+  return chip
+end
+
 local COST_ORDER = { "None", "Low", "Medium", "High", "Unknown" }
 
 local function rowCard(parent, row, isBest, listWidth)
   local card = Widgets.Panel(parent, { base = ns.palette.raised, borderAlpha = 0.5 })
-  card:SetHeight(row.notTestable and 44 or 86)
+  card:SetHeight(row.notTestable and 44 or 100)
 
   local name = Widgets.Text(card, "body", L(row.labelKey or row.key or "?"))
-  name:SetPoint("TOPLEFT", 12, -10)
+  name:SetPoint("TOPLEFT", 12, -8)
   if isBest and row.gain then
     local medal = Widgets.Text(card, "small", L("best"))
     medal:SetPoint("LEFT", name, "RIGHT", 10, 0)
     Skin.ColorText(medal, ns.palette.goldBright)
+  end
+
+  -- action chip, top right
+  local kind = classify(row)
+  local chipText, chipColor
+  if kind == "worth" then
+    chipText, chipColor = L("act_worth"), ns.palette.gainColor()
+  elseif kind == "hitch" then
+    chipText, chipColor = L("act_hitch"), ns.palette.danger
+  elseif kind == "retest" then
+    chipText, chipColor = L("act_retest"), ns.palette.costColor()
+  elseif kind == "cant" then
+    chipText, chipColor = L("act_cant"), ns.palette.textDim
+  else
+    chipText, chipColor = L("act_nogain"), ns.palette.textDim
+  end
+  local chip = actionChip(card, chipText, chipColor)
+  chip:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, -8)
+  if kind == "hitch" and row.hitchFps then
+    Widgets.TooltipLines(chip, function()
+      return {
+        L("hitch_note"),
+        string.format("Lowest FPS right after the change: %.0f", row.hitchFps or 0),
+      }
+    end)
+  elseif kind == "retest" then
+    Widgets.TooltipLines(chip, function()
+      return { L("noisy_note") }
+    end)
   end
 
   if row.notTestable then
@@ -29,33 +112,79 @@ local function rowCard(parent, row, isBest, listWidth)
       or row.reason == "already-lowest" and L("reason_already_lowest")
       or Lfmt("reason_failed", tostring(row.reason or "?"))
     local fs = Widgets.Text(card, "small", L("not_testable") .. " — " .. reason)
-    fs:SetPoint("LEFT", name, "RIGHT", 16, 0)
+    fs:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
     Skin.ColorText(fs, ns.palette.textDim)
     return card
   end
 
   local sentence
-  if row.gain and row.gain > 0.5 then
+  if kind == "worth" then
     sentence = Lfmt("results_sentence_gain", L(row.labelKey or "?"), row.gain)
   else
     sentence = Lfmt("results_sentence_none", L(row.labelKey or "?"))
   end
   local sentenceFs = Widgets.Text(card, "small", sentence)
-  sentenceFs:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
+  sentenceFs:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -6)
+
+  -- what was actually changed (+ what the setting does); rows from runs
+  -- made before pre.3 simply have no stored values and skip this line
+  local changeText, changeTip
+  if row.changes and #row.changes > 1 then
+    changeText = Lfmt("change_multi", #row.changes)
+    changeTip = {}
+    for _, ch in ipairs(row.changes) do
+      local nm = ch.labelKey and L(ch.labelKey) or tostring(ch.key or "?")
+      changeTip[#changeTip + 1] = string.format("- %s: %s -> %s", nm, tostring(ch.from), tostring(ch.to))
+    end
+  elseif row.valueFrom ~= nil and row.valueTo ~= nil then
+    local note = candNote(row.key)
+    if note then
+      changeText = Lfmt("change_note_pattern", tostring(row.valueFrom), tostring(row.valueTo), note)
+    else
+      changeText = Lfmt("change_pattern", tostring(row.valueFrom), tostring(row.valueTo))
+    end
+  else
+    changeText = candNote(row.key)
+  end
+  if changeText and changeText ~= "" then
+    local changeFs = Widgets.Text(card, "small", changeText)
+    changeFs:SetPoint("TOPLEFT", sentenceFs, "BOTTOMLEFT", 0, -6)
+    local maxW = math.max(200, (listWidth or 400) - 140)
+    changeFs:SetWidth(maxW)
+    changeFs:SetJustifyH("LEFT")
+    if changeFs:GetStringWidth() > maxW then
+      local t = changeText
+      while t ~= "" and changeFs:GetStringWidth() > maxW - 10 do
+        t = utf8chop(t)
+        changeFs:SetText(t .. "..")
+      end
+    end
+    if changeTip then
+      Widgets.TooltipLines(changeFs, function()
+        return changeTip
+      end)
+    end
+  end
 
   local beforeAfter = Widgets.Text(card, "small", Lfmt("before_after", row.before or 0, row.after or 0))
-  beforeAfter:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 12, 10)
+  beforeAfter:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 12, 8)
 
   local conf = Widgets.Text(card, "small", L("confidence") .. ": " .. (row.confidence or "?"))
-  conf:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -12, 10)
+  conf:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -8, 8)
   Skin.ColorText(conf, row.noisy and ns.palette.costColor() or ns.palette.gainColor())
+  Widgets.TooltipLines(conf, function()
+    local c = row.confidence
+    local tip = { L("conf_tip_1") }
+    tip[#tip + 1] = L(c == "Low" and "conf_tip_low" or c == "High" and "conf_tip_high" or "conf_tip_med")
+    return tip
+  end)
 
   -- dual bar: sizes from the known list width (review I8 — the card has no
   -- resolved width yet at create time)
   local barWidth = math.max(120, (listWidth or 400) - 24)
   local barBg = card:CreateTexture(nil, "ARTWORK")
   barBg:SetHeight(8)
-  barBg:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 12, 32)
+  barBg:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 12, 28)
   barBg:SetWidth(barWidth)
   barBg:SetColorTexture(ns.palette.obsidian.r, ns.palette.obsidian.g, ns.palette.obsidian.b, 1)
   local maxV = math.max(row.before or 0, row.after or 0, 1)
@@ -72,7 +201,8 @@ local function rowCard(parent, row, isBest, listWidth)
   local gain = ns.palette.gainColor()
   afterBar:SetColorTexture(gain.r, gain.g, gain.b, 1)
 
-  -- owner-editable visual-cost tier (brief 5.6, review I13)
+  -- owner-editable visual-cost tier (brief 5.6, review I13); sits under the
+  -- action chip since pre.3
   if row.key then
     local currentCost = ns.settings.costOf(row.key)
     local costDrop = Widgets.Dropdown(card, {
@@ -89,23 +219,75 @@ local function rowCard(parent, row, isBest, listWidth)
         ns.settings.setCost(row.key, id)
       end,
     })
-    costDrop:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, -8)
+    costDrop:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, -28)
     Widgets.TooltipLines(costDrop, function()
       return { L("cost_edit") .. ": " .. currentCost }
     end)
   end
-
-  if row.noisy then
-    local note = Widgets.Text(card, "small", L("noisy_note"))
-    note:SetPoint("RIGHT", card, "RIGHT", -110, -12)
-    Skin.ColorText(note, ns.palette.costColor())
-  elseif row.hitch then
-    local note = Widgets.Text(card, "small", L("hitch_note"))
-    note:SetPoint("RIGHT", card, "RIGHT", -110, -12)
-    Skin.ColorText(note, ns.palette.danger)
-  end
   return card
 end
+
+-- ------------------------------------------------- recommendations ----
+
+local function buildRecommendations(sortedRows)
+  -- sortedRows must be gain-desc; filtering keeps that order
+  local worth, hasNoisy = {}, false
+  for _, r in ipairs(sortedRows) do
+    if not r.notTestable then
+      if r.noisy or r.confidence == "Low" then
+        hasNoisy = true
+      end
+      if classify(r) == "worth" then
+        worth[#worth + 1] = r
+      end
+    end
+  end
+  return worth, hasNoisy
+end
+
+local function recommendLines(worth, hasNoisy)
+  -- shared by the What-to-do panel and the Copy report
+  local lines = {}
+  if #worth > 0 then
+    local best = worth[1]
+    local bestName = L(best.labelKey or best.key or "?")
+    if best.changes and #best.changes > 1 then
+      lines[#lines + 1] = Lfmt("rec_combine", best.gain or 0)
+    elseif best.valueTo ~= nil then
+      lines[#lines + 1] = Lfmt(
+        "rec_primary",
+        bestName,
+        tostring(best.valueTo),
+        best.valueFrom ~= nil and tostring(best.valueFrom) or "?",
+        best.gain or 0
+      )
+    else
+      lines[#lines + 1] = Lfmt("results_sentence_gain", bestName, best.gain or 0)
+    end
+    if #worth > 1 then
+      local items = {}
+      for i = 2, math.min(#worth, 4) do
+        local r = worth[i]
+        local nm = L(r.labelKey or r.key or "?")
+        local multi = r.changes and #r.changes > 1
+        local tgt = (r.valueTo ~= nil and not multi) and (nm .. " to " .. tostring(r.valueTo)) or nm
+        items[#items + 1] = string.format("%s (+%.1f)", tgt, r.gain or 0)
+      end
+      lines[#lines + 1] = L("rec_also") .. ": " .. table.concat(items, ", ")
+    end
+    lines[#lines + 1] = L("rec_howto")
+    lines[#lines + 1] = L("rec_caveat")
+  elseif hasNoisy then
+    lines[#lines + 1] = L("rec_noisy")
+    lines[#lines + 1] = L("rec_caveat")
+  else
+    lines[#lines + 1] = L("rec_none")
+    lines[#lines + 1] = L("rec_caveat")
+  end
+  return lines
+end
+
+-- ---------------------------------------------------------- create ----
 
 local function create(parent)
   local frame = parent
@@ -114,11 +296,46 @@ local function create(parent)
   local runHeader = Widgets.Text(frame, "header", "")
   runHeader:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -pad)
 
+  -- What-to-do panel (owner ask: "explain what to change")
+  local SUMMARY_H = 104
+  local summary = Widgets.Panel(frame, { base = ns.palette.raised, borderAlpha = 0.6 })
+  summary:SetHeight(SUMMARY_H)
+  summary:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -pad - 26)
+  summary:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -pad, -pad - 26)
+  local recTitle = Widgets.Text(summary, "small", L("rec_title"))
+  recTitle:SetPoint("TOPLEFT", summary, "TOPLEFT", 12, -8)
+  Skin.ColorText(recTitle, ns.palette.goldBright)
+  local recLines = {}
+  local function showRecLines(lines)
+    for i = 1, math.max(#lines, #recLines) do
+      local fs = recLines[i]
+      if not fs then
+        fs = Widgets.Text(summary, i == 1 and "body" or "small", "")
+        recLines[i] = fs
+      end
+      if lines[i] then
+        fs:SetText(lines[i])
+        fs:SetWidth(math.max(120, summary:GetWidth() - 24))
+        fs:SetJustifyH("LEFT")
+        fs:Show()
+      else
+        fs:Hide()
+      end
+    end
+    local prev = recTitle
+    for i = 1, #lines do
+      recLines[i]:ClearAllPoints()
+      recLines[i]:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, i == 1 and -6 or -3)
+      prev = recLines[i]
+    end
+  end
+  summary:Hide()
+
   local list = CreateFrame("Frame", nil, frame)
-  list:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -pad - 28)
+  list:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -pad - 26 - SUMMARY_H - 8)
   list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, pad + 48)
   list:EnableMouseWheel(true)
-  local cardCache = {} -- row -> card (bounded pool; review I9)
+  local cardCache = {} -- index -> card (bounded pool; review I9)
   local offset = 0
   local sortedRows = {}
 
@@ -177,7 +394,38 @@ local function create(parent)
       lines[#lines + 1] = "Crowd: " .. ns.context.Label()
       if run then
         lines[#lines + 1] = string.format("Run #%d mode=%s", run.id or 0, tostring(run.mode))
-        for _, row in ipairs(run.rows) do
+        local repRows = {}
+        for _, r in ipairs(run.rows or {}) do
+          repRows[#repRows + 1] = r
+        end
+        table.sort(repRows, function(a, b)
+          return (a.gain or -999) > (b.gain or -999)
+        end)
+        local worth = buildRecommendations(repRows)
+        if #worth > 0 then
+          for i = 1, math.min(3, #worth) do
+            local r = worth[i]
+            if r.changes and #r.changes > 1 then
+              lines[#lines + 1] = string.format(
+                "- RECOMMEND: apply the top changes together: %+.1f FPS (confidence %s)",
+                r.gain or 0,
+                tostring(r.confidence)
+              )
+            else
+              lines[#lines + 1] = string.format(
+                "- RECOMMEND: set %s to %s (was %s): %+.1f FPS, confidence %s",
+                L(r.labelKey or "?"),
+                tostring(r.valueTo),
+                r.valueFrom ~= nil and tostring(r.valueFrom) or "?",
+                r.gain or 0,
+                tostring(r.confidence)
+              )
+            end
+          end
+        else
+          lines[#lines + 1] = "- RECOMMEND: none (no clear wins in this crowd)"
+        end
+        for _, row in ipairs(repRows) do
           if row.notTestable then
             lines[#lines + 1] = string.format("- %s: not tested (%s)", L(row.labelKey or "?"), tostring(row.reason))
           else
@@ -253,16 +501,20 @@ local function create(parent)
     end
     if #sortedRows == 0 then
       empty:Show()
+      summary:Hide()
       runHeader:SetText("")
       applyBtn:Disable()
       return
     end
     empty:Hide()
+    summary:Show()
     local zone = (run.zone or "?")
     if run.subzone and run.subzone ~= "" then
       zone = zone .. " / " .. run.subzone
     end
     runHeader:SetText(Lfmt("zone_pattern", zone, L("crowd_" .. (run.crowd or "quiet")) or "?"))
+    local worth, hasNoisy = buildRecommendations(sortedRows)
+    showRecLines(recommendLines(worth, hasNoisy))
     offset = 0
     rebuild()
   end

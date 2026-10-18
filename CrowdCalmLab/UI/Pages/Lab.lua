@@ -147,6 +147,7 @@ local function create(parent)
   end
 
   local refreshRunButton -- forward-declared; defined below the controls
+  local refreshOverlay -- forward-declared so Run/Cancel can refresh instantly
   local tileCache = {} -- cand.id -> tile (bounded pool; review I9)
 
   local function rebuildTiles()
@@ -188,7 +189,10 @@ local function create(parent)
     rebuildTiles()
   end)
 
-  -- bottom controls
+  -- bottom controls: combine toggle on the top row, everything else as one
+  -- right-aligned chain [est] [Quick] [Thorough] [Run Lab] on the bottom
+  -- row. Before pre.3 the mode buttons and Run button overlapped (owner
+  -- screenshot: Thorough drawn through Run Lab).
   local controls = CreateFrame("Frame", nil, frame)
   controls:SetHeight(72)
   controls:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", pad, pad)
@@ -205,7 +209,6 @@ local function create(parent)
   combineBox:SetPoint("TOPLEFT", controls, "TOPLEFT", 0, -4)
 
   local estText = Widgets.Text(controls, "small", "")
-  estText:SetPoint("BOTTOMLEFT", controls, "BOTTOMLEFT", 0, 28)
   Skin.ColorText(estText, ns.palette.textDim)
 
   local mode = ns.db.settings.lab.defaultMode or "quick"
@@ -225,7 +228,6 @@ local function create(parent)
     end,
   })
   quickBtn:SetWidth(80)
-  quickBtn:SetPoint("RIGHT", controls, "RIGHT", -220, 0)
   thoroughBtn = Widgets.Button(controls, {
     small = true,
     label = L("thorough"),
@@ -235,7 +237,6 @@ local function create(parent)
     end,
   })
   thoroughBtn:SetWidth(130)
-  thoroughBtn:SetPoint("LEFT", quickBtn, "RIGHT", 6, 0)
 
   local runBtn = Widgets.Button(controls, {
     label = L("run_lab"),
@@ -247,11 +248,17 @@ local function create(parent)
         ns.ui.ShowBanner(L("err_" .. (err or "noselect")) or tostring(err), "danger", 6)
       else
         ns.ui.ShowBanner(L("banner_running"), "gold", 6)
+        if refreshOverlay then
+          refreshOverlay() -- cover the page now, not on the next 1 Hz tick
+        end
       end
     end,
   })
   runBtn:SetWidth(160)
-  runBtn:SetPoint("RIGHT", controls, "RIGHT", 0, 12)
+  runBtn:SetPoint("RIGHT", controls, "RIGHT", 0, -10)
+  thoroughBtn:SetPoint("RIGHT", runBtn, "LEFT", -6, 0)
+  quickBtn:SetPoint("RIGHT", thoroughBtn, "LEFT", -6, 0)
+  estText:SetPoint("RIGHT", quickBtn, "LEFT", -10, 0)
 
   function refreshRunButton()
     local count = 0
@@ -266,10 +273,14 @@ local function create(parent)
     estText:SetText(Lfmt("est_pattern", ns.lab.EstimateSeconds(mode, count) .. " s"))
   end
 
-  -- running overlay
+  -- running overlay: opaque cover that fully blocks the page. The pre.3
+  -- build let the tile grid show through and clicks pass to hidden controls
+  -- (owner screenshot: Run button visible with Cancel floating on top).
   local overlay = CreateFrame("Frame", nil, frame)
   overlay:SetAllPoints(frame)
-  Skin.ApplyPanel(overlay, { base = ns.palette.obsidian, alpha = 0.92, vignette = true })
+  overlay:SetFrameLevel(frame:GetFrameLevel() + 10)
+  overlay:EnableMouse(true)
+  Skin.ApplyPanel(overlay, { base = ns.palette.obsidian, alpha = 0.96, vignette = true })
   overlay:Hide()
   local ring = Widgets.Ring(overlay, 64)
   ring:SetPoint("TOP", overlay, "TOP", 0, -60)
@@ -284,13 +295,17 @@ local function create(parent)
   local cancelBtn = Widgets.Button(overlay, {
     label = L("cancel_test"),
     primary = true,
+    height = 32,
     onClick = function()
       ns.lab.Cancel()
+      if refreshOverlay then
+        refreshOverlay()
+      end
       ns.ui.ShowBanner(L("err_cancelled"), "gold", 6)
     end,
   })
-  cancelBtn:SetWidth(140)
-  cancelBtn:SetPoint("BOTTOM", overlay, "BOTTOM", 0, 28)
+  cancelBtn:SetWidth(160)
+  cancelBtn:SetPoint("BOTTOM", overlay, "BOTTOM", 0, 16)
 
   local combatBanner = Widgets.Text(overlay, "header", L("err_combat"))
   combatBanner:SetPoint("BOTTOM", cancelBtn, "TOP", 0, 12)
@@ -308,7 +323,7 @@ local function create(parent)
   local lastPhase = nil
   local lastSeenError = nil
 
-  local function refreshOverlay()
+  refreshOverlay = function()
     local running = ns.lab.IsRunning()
     overlay:SetShown(running)
     if not running then
