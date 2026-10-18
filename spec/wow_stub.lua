@@ -78,10 +78,25 @@ function widgetMethods:GetChecked()
 end
 
 function widgetMethods:Click()
+  if self.__kind == "CheckButton" then
+    self.__checked = not self.__checked
+  end
   if self.__scripts.OnClick then
     self.__scripts.OnClick(self)
   end
   return self
+end
+
+function widgetMethods:SetValue(value)
+  self.__value = value
+  if self.__scripts.OnValueChanged then
+    self.__scripts.OnValueChanged(self, value)
+  end
+  return self
+end
+
+function widgetMethods:GetValue()
+  return self.__value
 end
 
 local function addChild(widget, name)
