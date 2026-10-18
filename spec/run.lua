@@ -18,6 +18,7 @@ local specs = {
   "core_spec",
   "monitor_spec",
   "panel_spec",
+  "devwindow_spec",
   "dev_spec",
 }
 

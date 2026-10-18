@@ -131,6 +131,34 @@ function widgetMethods:CreateSlider(name)
   return addChild(sl, name)
 end
 
+function widgetMethods:CreateButton(name)
+  local b = newWidget("Button")
+  b.__name = name
+  return addChild(b, name)
+end
+
+function widgetMethods:CreateEditBox(name)
+  local e = newWidget("EditBox")
+  e.__name = name
+  e.__multiLine = false
+  return addChild(e, name)
+end
+
+function widgetMethods:HighlightText()
+  self.__highlighted = true
+  return self
+end
+
+function widgetMethods:SetFocus()
+  self.__focused = true
+  return self
+end
+
+function widgetMethods:SetMaxLetters(n)
+  self.__maxLetters = n
+  return self
+end
+
 function newWidget(kind)
   return setmetatable({
     __kind = kind,
@@ -176,6 +204,7 @@ function stub.reset()
     gcKB = 1024,
     hasGetAllCommands = true,
     getInfoNilMode = false,
+    charName = "Testchar",
   }
 end
 
@@ -310,6 +339,23 @@ function stub.install()
   _G.GetLocale = function()
     return "enUS"
   end
+
+  _G.UnitName = function()
+    return stub.state.charName
+  end
+
+  _G.date = function()
+    return "2026-10-18 12:00:00"
+  end
+
+  _G.C_AddOns = {
+    GetAddOnMetadata = function(_, field)
+      if field == "Version" then
+        return stub.state.addonVersion or "0.2.0"
+      end
+      return nil
+    end,
+  }
 
   _G.InCombatLockdown = function()
     return stub.state.inCombat
