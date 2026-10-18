@@ -10,6 +10,7 @@ stub.install()
 
 local specs = {
   "smoke_spec",
+  "crowd_spec",
 }
 
 for _, name in ipairs(specs) do
