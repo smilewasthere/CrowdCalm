@@ -17,3 +17,9 @@ Core/Compat.lua
 # Data
 Data/Palette.lua
 Data/Settings.lua
+
+# Engine
+Engine/Stats.lua
+Engine/Meter.lua
+Engine/Context.lua
+Engine/StutterLog.lua

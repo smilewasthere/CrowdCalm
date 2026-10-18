@@ -29,6 +29,7 @@ read_globals = {
   "GetZoneText",
   "GetSubZoneText",
   "GetInstanceInfo",
+  "GetNumGroupMembers",
   "SlashCmdList",
   "PlaySound",
   "StaticPopupDialogs",
