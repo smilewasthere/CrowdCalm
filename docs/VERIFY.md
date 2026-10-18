@@ -121,3 +121,10 @@ note the result in this file (or tell the addon author).
     logout baseline, then relogging.
 26. **Does GetFramerate() exist on Forever with the same units (FPS)?**
     `/dump GetFramerate()`
+
+27. **Does the minimap button show, toggle, drag, and persist?** At login
+    a 32px CrowdCalm Lab logo button should sit on the minimap ring
+    (top-right by default). Left-click toggles the window; dragging
+    orbits it and the angle survives `/reload`; Settings -> "Show
+    minimap button" hides and shows it immediately.
+    `/dump CrowdCalmLabMinimapButton ~= nil`

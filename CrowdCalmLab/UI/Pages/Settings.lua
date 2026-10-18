@@ -1,7 +1,7 @@
 -- UI/Pages/Settings.lua — every owner preference (brief section 6.6):
 -- UI scale, reduce motion, colorblind palette, font size, sample length,
--- default mode, stutter floor, compartment preference, debug log, mute,
--- and reset-data behind a confirmation.
+-- default mode, stutter floor, compartment preference, minimap button,
+-- debug log, mute, and reset-data behind a confirmation.
 local ADDON_NAME, ns = ...
 
 local Widgets = ns.widgets
@@ -76,6 +76,20 @@ local function create(parent)
   fontBox:SetPoint("LEFT", muteBox, "RIGHT", 240, 0)
   Widgets.TooltipLines(fontBox, function()
     return { L("set_compartment_note") }
+  end)
+  y = y - 36
+
+  local mmBox = Widgets.Checkbox(frame, {
+    label = L("set_minimap"),
+    checked = ui.minimapButton,
+    onToggle = function(v)
+      ui.minimapButton = v
+      ns.minimapButton.Refresh()
+    end,
+  })
+  mmBox:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, y)
+  Widgets.TooltipLines(mmBox, function()
+    return { L("set_minimap_note") }
   end)
   y = y - 36
 

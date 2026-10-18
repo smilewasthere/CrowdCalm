@@ -16,6 +16,7 @@ settings.defaults = {
     fontSize = 14,
     muted = false,
     compartment = true,
+    minimapButton = true,
   },
   lab = {
     sampleSeconds = 8,
@@ -238,7 +239,7 @@ function settings.initialize(db)
     settings = util.deepCopy(settings.defaults),
     visualCost = {},
     selection = {},
-    ui = { point = nil, x = 0, y = 0, page = 1 },
+    ui = { point = nil, x = 0, y = 0, page = 1, minimapAngle = 45 },
     results = {},
     stutter = {},
     baseline = nil,

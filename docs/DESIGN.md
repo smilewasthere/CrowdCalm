@@ -49,8 +49,11 @@ intentional globals are:
 
 ## Performance budget
 
-- Zero `OnUpdate` handlers. All periodic work uses `C_Timer` tickers
+- Zero idle `OnUpdate` handlers. All periodic work uses `C_Timer` tickers
   acquired through `Util.AcquireTicker` (one ticker per key, refcounted).
+  The one exception: the minimap button installs an `OnUpdate` for the
+  duration of a drag (mouse-down to mouse-up) to orbit the button around
+  the minimap rim, and removes it on release — no handler runs otherwise.
 - The meter runs at 4 Hz only while refcounted (`Acquire`/`Release`:
   window open, a lab test, or the stutter log).
 - The stutter log runs a 1 Hz ticker only while enabled.
@@ -77,9 +80,11 @@ intentional globals are:
    wheel-scroll list (Widgets.RowList) is testable by eye and has no
    template drift. (Brief section 7.6 allowed fallbacks; this is the
    fallback path, chosen up front.)
-2. **No minimap button.** Entry points are the addon compartment (where
-   the client has one) and `/ccl`. A minimap button would add another
-   protected-frame interaction surface for zero measurement value.
+2. **Minimap button (owner request, pre.2; originally declined).** The
+   brief kept entry points to the addon compartment and `/ccl`; for
+   pre.2 the owner asked for a draggable, clickable minimap button. It is
+   a plain Button (no secure/protected handlers), keeps the zero-idle-cost
+   rule (`OnUpdate` only while dragging), and can be hidden in Settings.
 3. **Letter-tile emblem/icons instead of atlas artwork.** Atlas names and
    their texture coordinates were not verifiable from the repo;
    `scripts/make-textures.py` generates committed TGAs (gold letter tiles),
