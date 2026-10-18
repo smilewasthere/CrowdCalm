@@ -16,8 +16,30 @@ ns.widgets = Widgets
 function Widgets.Text(parent, sizeKey, text)
   local fs = parent:CreateFontString(nil, "OVERLAY")
   fs:SetFontObject(Skin.Font(sizeKey or "body"))
+  -- font-size preference applies only to the string itself (never to the
+  -- shared Blizzard font objects): override path/height per string.
+  local db = ns.db
+  if db and db.settings and db.settings.ui and db.settings.ui.fontSize then
+    local mult = db.settings.ui.fontSize / 14
+    if mult ~= 1 then
+      local font = Skin.Font(sizeKey or "body")
+      local path, height, flags = font:GetFont()
+      if type(path) == "string" and type(height) == "number" then
+        fs:SetFont(path, math.floor(height * mult + 0.5), flags)
+      end
+    end
+  end
   fs:SetText(text or "")
   return fs
+end
+
+-- muted-aware sound (SOUNDKIT table may be absent on some clients)
+function Widgets.PlaySound(skit)
+  local db = ns.db
+  if db and db.settings and db.settings.ui and db.settings.ui.muted then
+    return
+  end
+  pcall(PlaySound, skit)
 end
 
 function Widgets.Panel(parent, opts)
@@ -168,7 +190,7 @@ function Widgets.Dropdown(parent, opts)
     end
   end)
 
-  local menu = CreateFrame("Frame", nil, parent)
+  menu = CreateFrame("Frame", nil, parent)
   Skin.ApplyPanel(menu, { base = ns.palette.raised })
   menu:SetWidth(opts.width or 160)
   menu:SetHeight(#options * 24 + 8)

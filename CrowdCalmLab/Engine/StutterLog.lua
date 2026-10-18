@@ -171,6 +171,14 @@ function StutterLog.Count()
   return ring:Count()
 end
 
+function StutterLog.Clear()
+  if not ring then
+    return
+  end
+  ring:Clear()
+  prevValid[1], prevValid[2], prevValid[3], prevValid[4] = false, false, false, false
+end
+
 function StutterLog.Save()
   if not ns.db or not ring then
     return

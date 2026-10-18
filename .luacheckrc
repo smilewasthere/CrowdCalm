@@ -34,6 +34,7 @@ read_globals = {
   "GetNumGroupMembers",
   "SlashCmdList",
   "PlaySound",
+  "date",
   "SOUNDKIT",
   "YES",
   "NO",

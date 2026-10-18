@@ -33,3 +33,10 @@ UI/Skin.lua
 UI/Widgets.lua
 UI/MainWindow.lua
 UI/Compartment.lua
+UI/Pages/Overview.lua
+UI/Pages/Lab.lua
+UI/Pages/Results.lua
+UI/Pages/Stutter.lua
+UI/Pages/Addons.lua
+UI/Pages/Settings.lua
+UI/Pages/About.lua
