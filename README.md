@@ -28,7 +28,9 @@ Works on:
    Copy the folder itself, not the repository root.
 3. Keep the folder name exactly `CrowdCalmLab` — the client only loads a
    folder whose name matches the `.toc` file.
-4. Restart the client (or `/reload`), then run `/ccl`.
+4. Restart the client (or `/reload`), then run `/ccl` (or click the addon
+   compartment icon, where your client has one). Seven pages: Overview,
+   Lab, Results, Stutter, Addons, Settings, About.
 
 Forever (beta) users: the same inner folder goes into
 `_classic_beta_\Interface\AddOns\` (the folder may change at launch).

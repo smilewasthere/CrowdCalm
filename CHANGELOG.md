@@ -8,7 +8,7 @@ All notable changes to CrowdCalm Lab are documented here.
 
 - First complete build: live meter, crowd context, A-B-A lab test runner,
   ranked results with visual-cost tiers and confidence badges, stutter log,
-  addon cost panel, self-check, export/copy report.
+  addon cost panel, self-check.
 - Safety engine (CVarGuard): combat guards, snapshot/restore, read-back
   verification, CVAR_UPDATE ownership, crash-recovery restore prompt,
   scope badges for server-stored CVars.

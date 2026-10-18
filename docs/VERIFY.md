@@ -89,18 +89,34 @@ note the result in this file (or tell the addon author).
 17. **Which memory API shape is present** (namespaced C_AddOns.* or the old
     globals)? The addon probes both:
     `/dump C_AddOns and C_AddOns.GetAddOnMemoryUsage ~= nil, GetAddOnMemoryUsage ~= nil`
-19. **What are GetAddOnMetric's recent/peak units and ranges** (assumed
+18. **What are GetAddOnMetric's recent/peak units and ranges** (assumed
     milliseconds)? Compare a known-light addon with the clock:
     `/dump C_AddOnProfiler.GetAddOnMetric("Blizzard_FrameXML", "RecentAverageTime")`
-20. **Do GetNumAddOns()/GetAddOnInfo(i) enumerate every addon on Forever
+19. **Do GetNumAddOns()/GetAddOnInfo(i) enumerate every addon on Forever
     with the same return shape?**
     `/dump GetNumAddOns(), (select(1, GetAddOnInfo(1)))`
-21. **What does C_CVar.SetCVar return on success/failure?** The addon trusts
+20. **What does C_CVar.SetCVar return on success/failure?** The addon trusts
     the read-back, not the return value, but the shape should be known:
     `/dump C_CVar.SetCVar("chatClassColorNames", "1")`
 
-## Sounds (UI/Widgets.lua)
+## Window, input, and misc UI (UI/MainWindow.lua, UI/Widgets.lua, UI/Compartment.lua)
 
-22. **Which sound kits are quiet and available?** The addon uses the
+21. **Which sound kits are quiet and available?** The addon uses the
     SOUNDKIT constants via PlaySound with pcall and can be muted in
     Settings; confirm the two cues are not startling.
+22. **Does OnKeyDown deliver digits 1–7 while the window has keyboard
+    enabled, and does ESC still close it via UISpecialFrames?**
+    Open the window, press `3` (should switch to Results) and `Esc`
+    (should hide the window without typing into chat).
+23. **Does the addon compartment callback fire with the expected
+    signature?** Click the compartment icon; the window should toggle.
+    `/dump CrowdCalmLab_OnAddonCompartmentClick ~= nil`
+24. **Which SetGradient argument shape is accepted** (color-table or
+    numeric)? The addon pcalls both; visually confirm the header gradient
+    is not a flat block.
+25. **Does StaticPopupDialogs accept the "%s" text pattern with a long
+    multi-line string** (the restore prompt lists up to six settings)?
+    Trigger it by changing a graphics setting manually after a clean
+    logout baseline, then relogging.
+26. **Does GetFramerate() exist on Forever with the same units (FPS)?**
+    `/dump GetFramerate()`
