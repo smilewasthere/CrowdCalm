@@ -25,3 +25,5 @@ Engine/Context.lua
 Engine/StutterLog.lua
 Engine/CVarGuard.lua
 Engine/LabRunner.lua
+Engine/AddonCost.lua
+Engine/SelfCheck.lua

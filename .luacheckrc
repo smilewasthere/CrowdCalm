@@ -37,6 +37,10 @@ read_globals = {
   "StaticPopup_Hide",
   "GetAddOnMetadata",
   "GetAddOnEnableState",
+  "GetNumAddOns",
+  "GetAddOnInfo",
+  "UpdateAddOnMemoryUsage",
+  "GetAddOnMemoryUsage",
   "SetItemRef",
   -- namespaced namespaces (fields are validated in game, not by luacheck)
   "C_Timer",

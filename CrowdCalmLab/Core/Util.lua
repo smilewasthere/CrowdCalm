@@ -56,9 +56,13 @@ end
 
 -- ---------------------------------------------------------------- pools ----
 -- WoW never frees frames: acquire from the pool or create once, release back.
+-- Every pool registers itself so SelfCheck can report totals.
+
+local poolRegistry = {}
 
 function Util.CreatePool(createFn)
   local pool = { free = {}, all = {} }
+  poolRegistry[#poolRegistry + 1] = pool
   function pool:Acquire()
     local n = #self.free
     local obj
@@ -185,6 +189,17 @@ function Util.ActiveTickerCount()
     n = n + 1
   end
   return n
+end
+
+function Util.PoolStats()
+  local spawned = 0
+  local free = 0
+  for i = 1, #poolRegistry do
+    local p = poolRegistry[i]
+    spawned = spawned + #p.all
+    free = free + #p.free
+  end
+  return spawned, free
 end
 
 -- -------------------------------------------------------------- misc ------

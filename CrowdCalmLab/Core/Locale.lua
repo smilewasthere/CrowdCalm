@@ -81,6 +81,19 @@ local strings = {
   crowd_why = "Why?",
   crowd_nameplates_off = "Friendly nameplates are off, so the count may look low.",
   crowd_instance_note = "Inside instances friendly nameplates are protected; the count is unreliable here.",
+
+  -- addon cost panel
+  cpu_caveat = "CPU numbers come from the client's addon profiler. Blizzard's own addons cannot be queried, and mouse-click handlers are not covered.",
+  memory_scan_hint = "Memory scan is one blocking call: it may hitch once. It never runs in combat and never automatically.",
+  scan_memory = "Scan memory (may hitch)",
+  addons_disable_confirm = "Disable %s on next reload? Re-enable it any time from the game's AddOn list.",
+  addons_disable_action = "Disable on next reload",
+  addons_disable_pending = "Disable pending",
+  selfcheck_own = "CrowdCalm Lab itself",
+  selfcheck_target = "Target: well under 0.3 ms average with the window open.",
+  col_addon = "Addon",
+  col_cpu = "CPU (ms)",
+  col_memory = "Memory (MB)",
 }
 local L = setmetatable(strings, {
   __index = function(_, key)

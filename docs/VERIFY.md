@@ -89,9 +89,18 @@ note the result in this file (or tell the addon author).
 17. **Which memory API shape is present** (namespaced C_AddOns.* or the old
     globals)? The addon probes both:
     `/dump C_AddOns and C_AddOns.GetAddOnMemoryUsage ~= nil, GetAddOnMemoryUsage ~= nil`
+19. **What are GetAddOnMetric's recent/peak units and ranges** (assumed
+    milliseconds)? Compare a known-light addon with the clock:
+    `/dump C_AddOnProfiler.GetAddOnMetric("Blizzard_FrameXML", "RecentAverageTime")`
+20. **Do GetNumAddOns()/GetAddOnInfo(i) enumerate every addon on Forever
+    with the same return shape?**
+    `/dump GetNumAddOns(), (select(1, GetAddOnInfo(1)))`
+21. **What does C_CVar.SetCVar return on success/failure?** The addon trusts
+    the read-back, not the return value, but the shape should be known:
+    `/dump C_CVar.SetCVar("chatClassColorNames", "1")`
 
 ## Sounds (UI/Widgets.lua)
 
-18. **Which sound kits are quiet and available?** The addon uses the
+22. **Which sound kits are quiet and available?** The addon uses the
     SOUNDKIT constants via PlaySound with pcall and can be muted in
     Settings; confirm the two cues are not startling.
