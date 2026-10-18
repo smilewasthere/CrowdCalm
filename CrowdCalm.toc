@@ -1,0 +1,14 @@
+## Interface: 120105
+## Title: CrowdCalm
+## Notes: Auto-switches a graphics profile when crowds appear
+## Author: Nightly
+## Version: 0.1.0
+## SavedVariables: CrowdCalmDB
+Crowd.lua
+Profiles.lua
+Restore.lua
+Switch.lua
+Stutter.lua
+Monitor.lua
+Panel.lua
+Core.lua
