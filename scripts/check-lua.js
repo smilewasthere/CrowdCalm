@@ -5,6 +5,8 @@
 //   2. CrowdCalmLab/CrowdCalmLab.toc first line is "## Interface: 120105, 120107, 16001"
 //   3. bidirectional TOC <-> file check (listed files exist, every .lua is listed)
 //   4. "## IconTexture" path exists when the key is present
+//   5. (G3) Media/ manifest: every expected .tga exists, is power-of-two,
+//      and the total is under 1 MB
 // Usage: node scripts/check-lua.js [--fixture]
 //   --fixture  parse scripts/fixtures/broken.lua instead; the gate must exit
 //              non-zero (proves the gate can fail).
@@ -59,6 +61,74 @@ function listLua(dir, out) {
     }
   }
   return out;
+}
+
+// --- G3: media texture manifest ----------------------------------------
+const MEDIA_MANIFEST = [
+  "shadow.tga",
+  "vignette.tga",
+  "noise.tga",
+  "glow.tga",
+  "sweep.tga",
+  "arc.tga",
+  "emblem.tga",
+  "icon.tga",
+  "icon_overview.tga",
+  "icon_lab.tga",
+  "icon_results.tga",
+  "icon_stutter.tga",
+  "icon_addons.tga",
+  "icon_settings.tga",
+  "icon_about.tga",
+];
+const MEDIA_MAX_BYTES = 1024 * 1024; // 1 MB total budget
+
+function isPowerOfTwo(n) {
+  return n > 0 && (n & (n - 1)) === 0;
+}
+
+function checkMedia() {
+  const mediaDir = path.join(addonDir, "Media");
+  let total = 0;
+  for (const name of MEDIA_MANIFEST) {
+    const full = path.join(mediaDir, name);
+    if (!fs.existsSync(full)) {
+      fail("media missing: Media/" + name);
+      continue;
+    }
+    const buf = fs.readFileSync(full);
+    total += buf.length;
+    if (buf.length < 18) {
+      fail("media too small (not a TGA?): Media/" + name);
+      continue;
+    }
+    const width = buf.readUInt16LE(12);
+    const height = buf.readUInt16LE(14);
+    if (!isPowerOfTwo(width) || !isPowerOfTwo(height)) {
+      fail(
+        "media not power-of-two: Media/" +
+          name +
+          " (" +
+          width +
+          "x" +
+          height +
+          ")"
+      );
+    }
+  }
+  if (total > MEDIA_MAX_BYTES) {
+    fail(
+      "media total " + total + " bytes exceeds budget " + MEDIA_MAX_BYTES
+    );
+  } else {
+    ok(
+      "media manifest (" +
+        MEDIA_MANIFEST.length +
+        " files, " +
+        total +
+        " bytes < 1 MB)"
+    );
+  }
 }
 
 function parseFile(file, label) {
@@ -137,7 +207,16 @@ function main() {
   if (listed.length > 0) ok("TOC file entries exist (" + listed.length + ")");
 
   if (iconTexture) {
-    const iconFull = path.join(addonDir, iconTexture.replace(/\//g, "\\"));
+    // IconTexture is a WoW-install-relative path
+    // (Interface\AddOns\<Addon>\Media\icon.tga); resolve it against the
+    // addon folder by stripping the Interface\AddOns\<name>\ prefix.
+    const normalized = iconTexture.replace(/\//g, "\\");
+    const prefix = "Interface\\AddOns\\CrowdCalmLab\\";
+    let rel = normalized;
+    if (normalized.toLowerCase().startsWith(prefix.toLowerCase())) {
+      rel = normalized.slice(prefix.length);
+    }
+    const iconFull = path.join(addonDir, rel);
     if (!fs.existsSync(iconFull)) {
       fail("## IconTexture missing on disk: " + iconTexture);
     } else {
@@ -156,6 +235,9 @@ function main() {
     }
     allParsed = parseFile(file, rel) && allParsed;
   }
+
+  // --- G3 media manifest ------------------------------------------------
+  checkMedia();
 
   report(luaFiles.length, listed.length);
 }

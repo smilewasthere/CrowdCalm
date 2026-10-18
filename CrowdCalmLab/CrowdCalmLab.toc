@@ -6,6 +6,7 @@
 ## SavedVariables: CrowdCalmLabDB
 ## AddonCompartmentFunc: CrowdCalmLab_OnAddonCompartmentClick
 ## Category: Development Tools
+## IconTexture: Interface\AddOns\CrowdCalmLab\Media\icon.tga
 
 # Core (load order matters: Init bootstraps the shared table first)
 Core/Init.lua
