@@ -9,6 +9,7 @@ local uiMode = "auto"
 local uiLen = 60
 local uiRounds = "AB"
 local addonVersion
+local ticker
 
 local function currentSettings()
   local core = ns.Core
@@ -125,9 +126,10 @@ function DevWindow.Create()
   local dev = devInstance()
   makeCheckbox(frame, "CrowdCalmDevForceCrowd", "Force crowd", 16, 64, dev ~= nil and dev.forceCrowd == true, function(_, checked)
     local instance = devInstance()
-    if instance then
+    if instance and instance.enabled then
       instance:SetForceCrowd(checked)
     end
+    DevWindow.Refresh()
   end)
 
   makeButton(frame, "CrowdCalmDevAllOff", "All features OFF", 16, 88, 130, function(s)
@@ -266,7 +268,18 @@ function DevWindow.Create()
   edit:SetSize(328, 140)
   edit:SetMultiLine(true)
   edit:SetMaxLetters(60000)
+  edit:SetScript("OnEditFocusGained", function(self)
+    self:HighlightText()
+  end)
   widgets.CrowdCalmDevReport = edit
+
+  if not ticker and _G.C_Timer and type(_G.C_Timer.NewTicker) == "function" then
+    ticker = _G.C_Timer.NewTicker(1, function()
+      if frame and frame:IsShown() then
+        DevWindow.Refresh()
+      end
+    end)
+  end
 
   frame:Hide()
   DevWindow.Refresh()
@@ -312,7 +325,8 @@ function DevWindow.Refresh()
       local left = math.max(0, math.ceil(status.phaseEndsAt - GetTime()))
       phaseText = string.format("Phase %s - %ds left", tostring(status.phase), left)
     else
-      phaseText = string.format("Recording - phase %s", tostring(status.phase or "?"))
+      local elapsed = math.max(0, math.floor(GetTime() - (status.phaseStartedAt or GetTime())))
+      phaseText = string.format("Recording - %ds", elapsed)
     end
   end
   widgets.CrowdCalmDevPhase:SetText(phaseText)
@@ -338,6 +352,12 @@ function DevWindow.Refresh()
   widgets.CrowdCalmDevLen60:SetText(uiLen == 60 and "[60s]" or "60s")
   widgets.CrowdCalmDevLen120:SetText(uiLen == 120 and "[120s]" or "120s")
   widgets.CrowdCalmDevRounds:SetChecked(uiRounds == "ABAB")
+end
+
+function DevWindow.Hide()
+  if frame then
+    frame:Hide()
+  end
 end
 
 function DevWindow.Toggle()

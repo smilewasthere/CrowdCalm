@@ -110,9 +110,13 @@ to false, removes the hook, persists a partial report) when:
 - `PLAYER_LOGOUT` arrives mid-test.
 - Auto mode only: at a phase flip, `getSnapshot().pendingReason` is
   `"combat"` or `"failed"`, or the applied-set does not match the phase's
-  expectation within 2 seconds (combat blocking an apply/restore).
-  Guided/Passive do not abort on this; the report flags detected
-  interference instead.
+  expectation within 2 seconds (combat blocking an apply/restore). A
+  pending `"loading"` flip (2 s post-loading debounce) is retried instead
+  of aborting. Guided does not abort on a mismatch; a real crowd keeping
+  the profile active through a B phase (force-crowd is off there) is
+  journaled once per B phase as an `"interference"` note and flagged in
+  the report's comparison section. Passive has no off-phase expectation,
+  so crowds during passive recording are normal observations.
 
 ## 5. Metrics
 
@@ -253,7 +257,9 @@ only; no placeholder names.
 3. Start auto AB 30s standing in an empty area: phases flip, result line
    appears, report shows the comparison; cvars restored afterwards.
 4. Click Copy report, paste into chat/editor — full report readable.
-5. Crash/logout mid-test: next login force-crowd is off, no stuck cvars,
-   partial report in the window's lastReport after Copy.
+5. Crash/logout mid-test: next login force-crowd is off, no stuck cvars.
+   `/reload`/logout save the partial report (including the final
+   restores) into `CrowdCalmDB.settings.dev.lastReport`; a hard crash
+   fires no events and keeps the previous report (frames/journal lost).
 6. `/ccdev off` — window hint appears, addon behaves exactly like the
    player version.

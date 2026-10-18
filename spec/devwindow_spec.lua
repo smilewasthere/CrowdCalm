@@ -30,6 +30,7 @@ describe("DevWindow", function()
           mode = self.testMode or "idle",
           phase = self.phase,
           phaseEndsAt = self.phaseEndsAt,
+          phaseStartedAt = self.phaseStartedAt,
           recording = self.recording == true,
           forceCrowd = self.forceCrowd,
           result = self.result,
@@ -211,8 +212,36 @@ describe("DevWindow", function()
     ns.DevWindow.Create()
 
     stub.state.fps = 77
+    ns.Core.dev.phaseStartedAt = stub.state.time - 5
     ns.DevWindow.Refresh()
     expect(widget("CrowdCalmDevStatus"):GetText():find("77", 1, true) ~= nil):toBe(true)
-    expect(widget("CrowdCalmDevPhase"):GetText():find("A", 1, true) ~= nil):toBe(true)
+    expect(widget("CrowdCalmDevStatus"):GetText():find("dev v", 1, true) ~= nil):toBe(true)
+    expect(widget("CrowdCalmDevPhase"):GetText():find("Recording", 1, true) ~= nil):toBe(true)
+    expect(widget("CrowdCalmDevPhase"):GetText():find("5s", 1, true) ~= nil):toBe(true)
+
+    ns.Core.dev.phaseEndsAt = stub.state.time + 42
+    ns.DevWindow.Refresh()
+    expect(widget("CrowdCalmDevPhase"):GetText():find("42s left", 1, true) ~= nil):toBe(true)
+  end)
+
+  it("report edit box selects all on focus", function()
+    fakeCore({ enabled = true, categories = {} })
+    ns.Core.dev.enabled = true
+    ns.DevWindow.Create()
+    local edit = widget("CrowdCalmDevReport")
+    edit.__highlighted = nil
+    local script = edit:GetScript("OnEditFocusGained")
+    expect(script):toBeTruthy()
+    script(edit)
+    expect(edit.__highlighted):toBe(true)
+  end)
+
+  it("registers a one-second live refresh ticker", function()
+    fakeCore({ enabled = true, categories = {} })
+    ns.Core.dev.enabled = true
+    ns.DevWindow.Create()
+    expect(#stub.state.tickers >= 1):toBe(true)
+    local ticker = stub.state.tickers[#stub.state.tickers]
+    expect(ticker.interval):toBe(1)
   end)
 end)

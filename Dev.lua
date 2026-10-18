@@ -133,8 +133,13 @@ function Dev:SetEnabled(on)
   if self.enabled == on then
     return
   end
-  if not on and self.test then
-    self:StopTest("dev disabled")
+  if not on then
+    if self.test then
+      self:StopTest("dev disabled")
+    end
+    if self.forceCrowd then
+      self:SetForceCrowd(false)
+    end
   end
   self.enabled = on
   self.settings.enabled = on
@@ -145,6 +150,9 @@ end
 
 function Dev:SetForceCrowd(on)
   on = on == true
+  if on and not self.enabled then
+    return
+  end
   if self.forceCrowd == on then
     return
   end
@@ -153,6 +161,9 @@ function Dev:SetForceCrowd(on)
 end
 
 function Dev:StartTest(mode, opts)
+  if not self.enabled then
+    return
+  end
   if self.test then
     self:StopTest("restart")
   end
@@ -161,6 +172,7 @@ function Dev:StartTest(mode, opts)
   local test = {
     mode = mode,
     startedAt = now,
+    phaseStartedAt = now,
     groups = {},
   }
   if mode == "auto" then
@@ -214,6 +226,8 @@ function Dev:NextPhase()
   end
   self:_journal("phase", { name = test.phase, event = "stop" })
   test.phase = test.phase == "A" and "B" or "A"
+  test.interferenceNoted = nil
+  test.phaseStartedAt = self.deps.getTime()
   self:_journal("phase", { name = test.phase, event = "start" })
   self:SetForceCrowd(test.phase == "A")
 end
@@ -364,6 +378,11 @@ function Dev:OnTick(now)
   self:_flushCvars()
 
   local test = self.test
+  if test and test.mode == "guided" and test.phase == "B" and snap and (snap.mode or "normal") == "crowd"
+    and not test.interferenceNoted then
+    test.interferenceNoted = true
+    self:_journal("note", { text = "interference: real crowd kept the profile active during phase B" })
+  end
   if test and (self.lastMem == nil or now - self.lastMem >= MEM_INTERVAL) then
     self.lastMem = now
     self:_journal("mem", { mb = collectgarbage("count") / 1024, phase = test.phase })
@@ -383,7 +402,11 @@ function Dev:OnTick(now)
         local expectedOn = test.phase == "A"
         local hasApplied = next(applied) ~= nil
         if expectedOn ~= hasApplied then
-          self:StopTest("apply did not take effect")
+          if snap.pendingReason == "loading" then
+            test.flipCheckAt = now + 1
+          else
+            self:StopTest("apply did not take effect")
+          end
         end
       end
     end
@@ -396,6 +419,7 @@ function Dev:OnTick(now)
         test.phaseIndex = nextIndex
         test.phase = test.rounds:sub(nextIndex, nextIndex)
         test.phaseEndsAt = test.phaseEndsAt + test.phaseSeconds
+        test.phaseStartedAt = now
         test.flipCheckAt = now + FLIP_GRACE
         self:_journal("phase", { name = test.phase, event = "flip" })
         self:SetForceCrowd(test.phase == "A")
@@ -409,6 +433,12 @@ function Dev:OnLogout(now)
     return
   end
   if self.test then
+    if self.deps.getSnapshot then
+      local snap = self.deps.getSnapshot()
+      if snap then
+        self:_diffSnapshot(snap)
+      end
+    end
     self:StopTest("logout")
   end
 end
@@ -419,6 +449,7 @@ function Dev:GetStatus()
     mode = test and test.mode or (self.enabled and "idle" or "off"),
     phase = test and test.phase or nil,
     phaseEndsAt = test and test.phaseEndsAt or nil,
+    phaseStartedAt = test and test.phaseStartedAt or nil,
     recording = test ~= nil,
     forceCrowd = self.forceCrowd == true,
     result = self.lastResult,
@@ -486,6 +517,12 @@ function Dev:_comparisonLines(test, add)
       word = "slight difference"
     end
     add(string.format("verdict: profile %s %.1f fps (%+.1f%%) - %s", verb, math.abs(cmp.avgDelta), cmp.avgPercent, word))
+    for _, entry in ipairs(self:_entriesInWindow(test)) do
+      if entry.kind == "note" and type(entry.text) == "string" and entry.text:find("^interference") then
+        add("interference: real crowd kept the profile active during a phase - comparison may be biased")
+        break
+      end
+    end
   elseif test then
     local why = test.mode == "passive" and "passive recording" or "incomplete phases"
     add("comparison unavailable: " .. why)
@@ -736,6 +773,9 @@ function Dev.RunCommand(input)
       return
     end
     dev:SetEnabled(input == "on")
+    if input == "off" and ns.DevWindow and ns.DevWindow.Hide then
+      ns.DevWindow.Hide()
+    end
   elseif input == "status" then
     if not dev then
       print("CrowdCalm: dev mode unavailable")

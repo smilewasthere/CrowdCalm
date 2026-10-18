@@ -50,6 +50,16 @@ describe("Dev", function()
     return n
   end
 
+  local function countNotes(dev, needle)
+    local n = 0
+    for _, entry in ipairs(dev:GetJournal()) do
+      if entry.kind == "note" and tostring(entry.text):find(needle, 1, true) then
+        n = n + 1
+      end
+    end
+    return n
+  end
+
   it("FrameStats computes avg, min, 1% low and worst", function()
     local deltas = {}
     for i = 1, 80 do
@@ -360,6 +370,26 @@ describe("Dev", function()
     expect(countKind(dev:GetJournal(), "test", "state", "aborted")):toBe(1)
   end)
 
+  it("auto keeps waiting while a loading screen delays the flip", function()
+    stub.reset()
+    local dev, deps = newDev()
+    dev:SetEnabled(true)
+    stub.state.time = 100
+    dev:StartTest("auto", { phaseSeconds = 30, rounds = "AB" })
+
+    deps.snapshot = { mode = "normal", plates = 0, applied = {}, baselines = {}, pendingReason = "loading" }
+    stub.state.time = 102.5
+    dev:OnTick(102.5)
+    expect(dev:GetStatus().recording):toBe(true)
+
+    deps.snapshot = { mode = "crowd", plates = 16, applied = { a = "1" }, baselines = { a = "10" } }
+    stub.state.time = 104
+    dev:OnTick(104)
+    expect(dev:GetStatus().recording):toBe(true)
+    expect(countKind(dev:GetJournal(), "test", "state", "aborted")):toBe(0)
+    dev:StopTest("manual")
+  end)
+
   it("guided recording alternates phases on demand", function()
     stub.reset()
     local dev, deps = newDev()
@@ -386,6 +416,53 @@ describe("Dev", function()
     expect(dev:GetStatus().mode):toBe("idle")
   end)
 
+  it("guided phase B with a real crowd journals interference once", function()
+    stub.reset()
+    local dev, deps = newDev()
+    dev:SetEnabled(true)
+    dev:StartTest("guided")
+    dev:NextPhase()
+    expect(dev.forceCrowd):toBe(false)
+
+    deps.snapshot = { mode = "crowd", plates = 20, applied = { a = "1" }, baselines = { a = "10" } }
+    dev:OnTick(10)
+    expect(countNotes(dev, "interference")):toBe(1)
+    dev:OnTick(11)
+    dev:OnTick(12)
+    expect(countNotes(dev, "interference")):toBe(1)
+    expect(dev:GetReport():find("interference", 1, true) ~= nil):toBe(true)
+
+    dev:NextPhase()
+    dev:OnTick(13)
+    expect(countNotes(dev, "interference")):toBe(1)
+
+    dev:NextPhase()
+    deps.snapshot = { mode = "crowd", plates = 20, applied = { a = "1" }, baselines = { a = "10" } }
+    dev:OnTick(14)
+    expect(countNotes(dev, "interference")):toBe(2)
+  end)
+
+  it("StartTest while running restarts and keeps the partial result", function()
+    stub.reset()
+    local dev = newDev()
+    dev:SetEnabled(true)
+    dev:StartTest("guided")
+    dev:OnFrame(1, 10)
+    stub.state.time = 5
+    dev:StartTest("passive")
+
+    expect(dev:GetStatus().recording):toBe(true)
+    expect(dev:GetStatus().mode):toBe("passive")
+    expect(dev:GetLastResult():find("incomplete", 1, true) ~= nil):toBe(true)
+    local restarted = 0
+    for _, entry in ipairs(dev:GetJournal()) do
+      if entry.kind == "test" and entry.reason == "restart" then
+        restarted = restarted + 1
+      end
+    end
+    expect(restarted):toBe(1)
+  end)
+
   it("disabling dev mid-test aborts and persists", function()
     stub.reset()
     local settings = {}
@@ -400,6 +477,27 @@ describe("Dev", function()
     expect(settings.lastReport ~= ""):toBe(true)
     expect(deps.hook):toBe(nil)
     expect(countKind(dev:GetJournal(), "test", "state", "aborted")):toBe(1)
+  end)
+
+  it("dev-off blocks StartTest and SetForceCrowd until re-enabled", function()
+    stub.reset()
+    local settings = {}
+    local dev, deps = newDev(settings)
+    expect(dev.enabled):toBe(false)
+
+    dev:StartTest("guided")
+    expect(dev:GetStatus().recording):toBe(false)
+    expect(deps.hook):toBe(nil)
+
+    dev:SetForceCrowd(true)
+    expect(dev.forceCrowd):toBe(false)
+
+    dev:SetEnabled(true)
+    dev:SetForceCrowd(true)
+    expect(dev.forceCrowd):toBe(true)
+
+    dev:SetEnabled(false)
+    expect(dev.forceCrowd):toBe(false)
   end)
 
   it("OnLogout mid-test aborts with a logout reason", function()
@@ -423,6 +521,23 @@ describe("Dev", function()
 
     dev:OnLogout(6)
     expect(dev:GetStatus().recording):toBe(false)
+  end)
+
+  it("OnLogout journals the final restores before persisting", function()
+    stub.reset()
+    local settings = {}
+    local dev, deps = newDev(settings)
+    dev:SetEnabled(true)
+    dev:StartTest("passive")
+
+    deps.snapshot = { mode = "crowd", plates = 16, applied = { a = "1" }, baselines = { a = "10" } }
+    stub.state.time = 4
+    dev:OnTick(4)
+    deps.snapshot = { mode = "normal", plates = 0, applied = {}, baselines = {} }
+    stub.state.time = 5
+    dev:OnLogout(5)
+
+    expect(settings.lastReport:find("restore a = 10", 1, true) ~= nil):toBe(true)
   end)
 
   it("memory is sampled every 5s while recording only", function()

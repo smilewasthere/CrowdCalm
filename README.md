@@ -207,8 +207,11 @@ Run on the player's machine (requires an actual retail client):
     its pre-test value.
 14. **Copy report**, paste into a text editor: a readable report with
     header, comparison, timeline and slow-frame sections.
-15. Force-close WoW (or `/reload`) mid-test: after relaunch, force crowd
-    is off, cvars match your original settings, and the partial report is
-    in `CrowdCalmDB.settings.dev.lastReport`.
+15. `/reload` (or logout) mid-test: force crowd is off afterwards, cvars
+    match your original settings, and the partial report — including the
+    final restores — is in `CrowdCalmDB.settings.dev.lastReport`.
+    Force-killing WoW is also safe (cvars are restored on next login) but
+    fires no events, so the partial report is only saved on `/reload` or
+    a clean logout; a hard crash keeps the previous report.
 16. `/ccdev off`: `/ccdev` shows the off hint and gameplay is identical to
     the player version (no dev frame, no journal, no extra work).

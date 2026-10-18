@@ -8,6 +8,7 @@ describe("Core", function()
   stub.loadAddon("Monitor.lua", ns)
   stub.loadAddon("Panel.lua", ns)
   stub.loadAddon("Dev.lua", ns)
+  stub.loadAddon("DevWindow.lua", ns)
   stub.loadAddon("Core.lua", ns)
 
   local BASELINES = {
@@ -389,6 +390,28 @@ describe("Core", function()
     expect(printedContains("usage")):toBe(true)
   end)
 
+  it("dev-off closes the window and stale clicks do nothing", function()
+    login()
+    _G.SlashCmdList.CROWDCALMDEV("on")
+    ns.DevWindow.Toggle()
+    local panel = stub.state.framesByName["CrowdCalmDevPanel"]
+    expect(panel):toBeTruthy()
+    expect(panel:IsShown()):toBe(true)
+
+    _G.SlashCmdList.CROWDCALMDEV("off")
+    expect(panel:IsShown()):toBe(false)
+    expect(ns.Core.dev.forceCrowd):toBe(false)
+
+    plates(0)
+    local calls = #stub.state.callLog
+    stub.state.framesByName["CrowdCalmDevForceCrowd"]:Click()
+    expect(ns.Core.dev.forceCrowd):toBe(false)
+    stub.state.framesByName["CrowdCalmDevStart"]:Click()
+    expect(ns.Core.dev:GetStatus().recording):toBe(false)
+    ns.Core._tick(10)
+    expect(#stub.state.callLog):toBe(calls)
+  end)
+
   it("normalizes corrupt dev settings at init", function()
     resetSession()
     primeKnown()
@@ -468,13 +491,21 @@ describe("Core", function()
     expect(#_G.CrowdCalmDB.settings.dev.tests):toBe(1)
   end)
 
-  it("logout mid-test aborts and persists a partial report", function()
+  it("logout mid-test aborts and persists a partial report with restores", function()
     login()
     ns.Core.dev:SetEnabled(true)
     ns.Core.dev:StartTest("passive")
+    ns.Core.dev:SetForceCrowd(true)
+    ns.Core._tick(10)
+    expect(C_CVar.GetCVar("particleDensity")):toBe("25")
+
+    stub.state.time = 11
     ns.Core._handleEvent("PLAYER_LOGOUT")
     expect(ns.Core.dev:GetStatus().recording):toBe(false)
-    expect(_G.CrowdCalmDB.settings.dev.lastReport ~= ""):toBe(true)
+    expect(ns.Core.dev.forceCrowd):toBe(false)
+    local report = _G.CrowdCalmDB.settings.dev.lastReport
+    expect(report ~= ""):toBe(true)
+    expect(report:find("restore particleDensity", 1, true) ~= nil):toBe(true)
   end)
 
   it("installs the DEV frame hook only while recording", function()
