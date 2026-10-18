@@ -22,6 +22,9 @@ describe("DevWindow", function()
       StopTest = function(self, reason)
         self.stopCalls[#self.stopCalls + 1] = reason
       end,
+      NextPhase = function(self)
+        self.nextCalls = (self.nextCalls or 0) + 1
+      end,
       GetStatus = function(self)
         return {
           mode = self.testMode or "idle",
@@ -170,6 +173,14 @@ describe("DevWindow", function()
 
     widget("CrowdCalmDevStop"):Click()
     expect(ns.Core.dev.stopCalls[1]):toBe("manual")
+  end)
+
+  it("Next phase drives the guided engine", function()
+    fakeCore({ enabled = true, categories = {} })
+    ns.Core.dev.enabled = true
+    ns.DevWindow.Create()
+    widget("CrowdCalmDevNextPhase"):Click()
+    expect(ns.Core.dev.nextCalls):toBe(1)
   end)
 
   it("Copy report fills the edit box and highlights it", function()

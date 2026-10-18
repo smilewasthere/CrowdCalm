@@ -8,6 +8,7 @@ local widgets = {}
 local uiMode = "auto"
 local uiLen = 60
 local uiRounds = "AB"
+local addonVersion
 
 local function currentSettings()
   local core = ns.Core
@@ -215,6 +216,13 @@ function DevWindow.Create()
     end
     DevWindow.Refresh()
   end)
+  makeButton(frame, "CrowdCalmDevNextPhase", "Next phase", 204, y, 110, function()
+    local instance = devInstance()
+    if instance and instance.NextPhase then
+      instance:NextPhase()
+    end
+    DevWindow.Refresh()
+  end)
 
   y = y + 28
   widgets.CrowdCalmDevPhase = frame:CreateFontString("CrowdCalmDevPhase", "OVERLAY", "GameFontHighlight")
@@ -287,7 +295,16 @@ function DevWindow.Refresh()
   if ns.Monitor and ns.Monitor.GetOwnMB then
     mb = ns.Monitor.GetOwnMB()
   end
-  widgets.CrowdCalmDevStatus:SetText(string.format("%s | plates %d | FPS %d | %.1f MB", mode, count, GetFramerate(), mb))
+  if not addonVersion then
+    addonVersion = "?"
+    if _G.C_AddOns and type(_G.C_AddOns.GetAddOnMetadata) == "function" then
+      local ok, value = pcall(_G.C_AddOns.GetAddOnMetadata, ADDON_NAME or "CrowdCalm", "Version")
+      if ok and value ~= nil then
+        addonVersion = tostring(value)
+      end
+    end
+  end
+  widgets.CrowdCalmDevStatus:SetText(string.format("%s | plates %d | FPS %d | %.1f MB | dev v%s", mode, count, GetFramerate(), mb, addonVersion))
 
   local phaseText = "idle"
   if status.recording then
