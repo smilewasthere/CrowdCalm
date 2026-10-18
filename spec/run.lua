@@ -13,6 +13,7 @@ local specs = {
   "crowd_spec",
   "profiles_spec",
   "restore_spec",
+  "switch_spec",
 }
 
 for _, name in ipairs(specs) do
