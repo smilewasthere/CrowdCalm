@@ -71,6 +71,9 @@ local function onTick()
   if okProfiler then
     ns.stats.AddLong(scratch[1], scratch[2], scratch[3], scratch[4])
   end
+  if ns.lab and ns.lab.OnSample then
+    ns.lab.OnSample(fps)
+  end
 
   -- session rates (counters live for the whole session; rates need >= 5 s)
   local elapsed = 0

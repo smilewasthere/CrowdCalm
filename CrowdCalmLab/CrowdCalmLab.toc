@@ -23,3 +23,5 @@ Engine/Stats.lua
 Engine/Meter.lua
 Engine/Context.lua
 Engine/StutterLog.lua
+Engine/CVarGuard.lua
+Engine/LabRunner.lua
