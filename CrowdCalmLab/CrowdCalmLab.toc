@@ -1,0 +1,19 @@
+## Interface: 120105, 120107, 16001
+## Title: CrowdCalm Lab
+## Notes: A measurement laboratory for crowded places: FPS lab tests, stutter log, addon cost.
+## Author: smilewasthere
+## Version: 1.0.0
+## SavedVariables: CrowdCalmLabDB
+## AddonCompartmentFunc: CrowdCalmLab_OnAddonCompartmentClick
+## Category: Development Tools
+
+# Core (load order matters: Init bootstraps the shared table first)
+Core/Init.lua
+Core/Events.lua
+Core/Locale.lua
+Core/Util.lua
+Core/Compat.lua
+
+# Data
+Data/Palette.lua
+Data/Settings.lua

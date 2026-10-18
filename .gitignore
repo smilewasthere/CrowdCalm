@@ -1,0 +1,6 @@
+dist/
+*.bak
+node_modules/
+__pycache__/
+*.pyc
+.superpowers/
