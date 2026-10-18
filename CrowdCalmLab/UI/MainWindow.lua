@@ -22,6 +22,7 @@ local HEADER_H, RAIL_W, FOOTER_H = 56, 200, 44
 
 local pageDefs = {} -- index -> def
 local pageFrames = {} -- index -> frame (lazy)
+local pageTickFailed = {} -- index -> true once onTick errored (no 1 Hz spam)
 local currentPage = nil
 local frame = nil
 local railButtons = {}
@@ -301,7 +302,10 @@ function UI.SwitchPage(index)
   if currentPage and pageDefs[currentPage] and pageFrames[currentPage] then
     local old = pageDefs[currentPage]
     if old.onHide then
-      old.onHide(pageFrames[currentPage])
+      local okH, errH = pcall(old.onHide, pageFrames[currentPage])
+      if not okH then
+        Util.LogError("page " .. currentPage .. " onHide", errH)
+      end
     end
     pageFrames[currentPage]:Hide()
   end
@@ -314,20 +318,39 @@ function UI.SwitchPage(index)
     local container = CreateFrame("Frame", nil, contentArea)
     container:SetAllPoints(contentArea)
     container:Hide()
-    pageFrames[index] = def.create(container) or container
-    pageFrames[index]:SetAllPoints(contentArea)
+    -- pcall so a broken page shows a readable message instead of a blank
+    -- content area (owner-reported empty window, pre-1.0.0-pre.2).
+    local okC, result = pcall(def.create, container)
+    if okC then
+      pageFrames[index] = result or container
+      pageFrames[index]:SetAllPoints(contentArea)
+    else
+      Util.LogError("page " .. index .. " (" .. tostring(def.name or "?") .. ") create", result)
+      local errText = Widgets.Text(container, "body", "")
+      errText:SetPoint("TOPLEFT", container, "TOPLEFT", 20, -20)
+      errText:SetPoint("RIGHT", container, "RIGHT", -20, 0)
+      errText:SetJustifyH("LEFT")
+      Skin.ColorText(errText, ns.palette.danger)
+      errText:SetText(
+        "This page failed to load:\n\n"
+          .. tostring(result)
+          .. "\n\nThe error was also printed to chat. Everything else keeps working."
+      )
+      container:SetScript("OnShow", nil)
+      pageFrames[index] = container
+    end
   end
   pageFrames[index]:Show()
   if def.onShow then
-    def.onShow(pageFrames[index])
+    local okS, errS = pcall(def.onShow, pageFrames[index])
+    if not okS then
+      Util.LogError("page " .. index .. " onShow", errS)
+    end
   end
   highlightRail(index)
 end
 
-local function ensureWindow()
-  if frame then
-    return frame
-  end
+local function buildWindow()
   frame = CreateFrame("Frame", "CrowdCalmLabFrame", UIParent)
   frame:SetSize(MAIN_W, MAIN_H)
   frame:SetPoint("CENTER")
@@ -390,41 +413,59 @@ local function ensureWindow()
   frame:SetScript("OnShow", function()
     if not updateTicker then
       updateTicker = Util.AcquireTicker("mainwindow-update", 1.0, function()
-        local fps = (ns.meter and ns.meter.live and ns.meter.live.fps) or 0
-        local gain = ns.palette.gainColor()
-        local danger = ns.palette.danger
-        local c = fps >= 50 and gain or (fps >= 30 and ns.palette.gold or danger)
-        fpsDot:SetColorTexture(c.r, c.g, c.b, 1)
-        fpsText:SetText(string.format("%.0f", fps))
-        ns.context.Update()
-        if statusCombat then
-          statusCombat:SetText(InCombatLockdown() and L("status_combat_in") or L("status_combat_out"))
-        end
-        if statusInstance then
-          local snap = ns.context.Snapshot()
-          if snap and snap.instanceType and snap.instanceType ~= "none" then
-            statusInstance:SetText(Lfmt("status_instance_some", snap.instanceType))
-            Skin.ColorText(statusInstance, ns.palette.costColor())
-          else
-            statusInstance:SetText(L("status_instance_none"))
-            Skin.ColorText(statusInstance, ns.palette.text)
+        local okTick, tickErr = pcall(function()
+          local fps = (ns.meter and ns.meter.live and ns.meter.live.fps) or 0
+          local gain = ns.palette.gainColor()
+          local danger = ns.palette.danger
+          local c = fps >= 50 and gain or (fps >= 30 and ns.palette.gold or danger)
+          fpsDot:SetColorTexture(c.r, c.g, c.b, 1)
+          fpsText:SetText(string.format("%.0f", fps))
+          ns.context.Update()
+          if statusCombat then
+            statusCombat:SetText(InCombatLockdown() and L("status_combat_in") or L("status_combat_out"))
           end
-        end
-        if statusBaseline then
-          statusBaseline:SetText(ns.cvarGuard.HasBaseline() and L("status_baseline_saved") or L("status_baseline_missing"))
-        end
-        local def = pageDefs[currentPage]
-        if def and def.onTick then
-          def.onTick(pageFrames[currentPage])
+          if statusInstance then
+            local snap = ns.context.Snapshot()
+            if snap and snap.instanceType and snap.instanceType ~= "none" then
+              statusInstance:SetText(Lfmt("status_instance_some", snap.instanceType))
+              Skin.ColorText(statusInstance, ns.palette.costColor())
+            else
+              statusInstance:SetText(L("status_instance_none"))
+              Skin.ColorText(statusInstance, ns.palette.text)
+            end
+          end
+          if statusBaseline then
+            statusBaseline:SetText(ns.cvarGuard.HasBaseline() and L("status_baseline_saved") or L("status_baseline_missing"))
+          end
+          local def = pageDefs[currentPage]
+          if def and def.onTick and not pageTickFailed[currentPage] then
+            -- a broken page tick must not spam 1 Hz errors: latch it off
+            local okPage, pageErr = pcall(def.onTick, pageFrames[currentPage])
+            if not okPage then
+              pageTickFailed[currentPage] = true
+              Util.LogError("page " .. tostring(currentPage) .. " onTick", pageErr)
+            end
+          end
+        end)
+        if not okTick then
+          -- self-disable: a dead ticker beats a 1 Hz error flood
+          Util.ReleaseTicker("mainwindow-update")
+          updateTicker = nil
+          Util.LogError("window ticker", tickErr)
         end
       end)
     end
-    ns.meter.Acquire()
-    local saved = ns.db.ui and ns.db.ui.page
-    if saved and pageDefs[saved] then
-      UI.SwitchPage(saved)
-    elseif pageDefs[1] then
-      UI.SwitchPage(1)
+    local okShow, showErr = pcall(function()
+      ns.meter.Acquire()
+      local saved = ns.db.ui and ns.db.ui.page
+      if saved and pageDefs[saved] then
+        UI.SwitchPage(saved)
+      elseif pageDefs[1] then
+        UI.SwitchPage(1)
+      end
+    end)
+    if not okShow then
+      Util.LogError("window OnShow", showErr)
     end
   end)
 
@@ -436,7 +477,10 @@ local function ensureWindow()
     for index, pageFrame in pairs(pageFrames) do
       local def = pageDefs[index]
       if def and def.onHide then
-        def.onHide(pageFrame)
+        local okHide, hideErr = pcall(def.onHide, pageFrame)
+        if not okHide then
+          Util.LogError("page " .. index .. " onHide", hideErr)
+        end
       end
     end
     ns.meter.Release()
@@ -451,6 +495,39 @@ local function ensureWindow()
   return frame
 end
 
+-- The window build is all-or-nothing: if any construction step throws, the
+-- partial frame is discarded and the next open rebuilds from scratch. This
+-- is what prevented the pre-1.0.0-pre.2 "header only, empty body" state,
+-- where a half-built window kept getting re-shown.
+local function ensureWindow()
+  if frame then
+    return frame
+  end
+  local ok, err = pcall(buildWindow)
+  if ok then
+    return frame
+  end
+  if frame then
+    frame:Hide() -- fires OnHide if scripts were attached; releases tickers
+  end
+  frame = nil
+  contentArea = nil
+  bannerFrame = nil
+  fpsText, fpsDot = nil, nil
+  statusCombat, statusInstance, statusBaseline = nil, nil, nil
+  railButtons = {}
+  pageFrames = {}
+  pageTickFailed = {}
+  currentPage = nil
+  Util.LogError("window build", err)
+  Widgets.ErrorPopup(
+    "CrowdCalm Lab could not build its window:\n\n"
+      .. tostring(err)
+      .. "\n\nThe full error was printed to chat. Please report it via the GitHub link in About."
+  )
+  return nil
+end
+
 function UI.ApplyUIScale(scale)
   scale = math.max(0.7, math.min(1.4, scale or 1))
   ns.db.ui.scale = scale
@@ -461,6 +538,9 @@ end
 
 function UI.Toggle()
   local f = ensureWindow()
+  if not f then
+    return -- build failed; error already surfaced via popup + chat
+  end
   if f:IsShown() then
     f:Hide()
   else
@@ -469,7 +549,10 @@ function UI.Toggle()
 end
 
 function UI.Show()
-  ensureWindow():Show()
+  local f = ensureWindow()
+  if f then
+    f:Show()
+  end
 end
 
 function UI.Hide()

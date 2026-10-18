@@ -98,7 +98,9 @@ end
 
 function Util.CreateFramePool(frameType, parent, template)
   return Util.CreatePool(function()
-    return CreateFrame(frameType, parent, template)
+    -- CreateFrame(type, name, parent, template): nil name, not the parent
+    -- (parent-in-name-slot broke every RowList row at runtime).
+    return CreateFrame(frameType, nil, parent, template)
   end)
 end
 

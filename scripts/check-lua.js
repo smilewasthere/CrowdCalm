@@ -7,6 +7,9 @@
 //   4. "## IconTexture" path exists when the key is present
 //   5. (G3) Media/ manifest: every expected .tga exists, is power-of-two,
 //      and the total is under 1 MB
+//   6. (G4) Locale: ns.L must be callable (__call present) because the
+//      codebase calls L("key"); missing literal locale keys warn (fallback
+//      renders the key text by design, so they are warnings not failures).
 // Usage: node scripts/check-lua.js [--fixture]
 //   --fixture  parse scripts/fixtures/broken.lua instead; the gate must exit
 //              non-zero (proves the gate can fail).
@@ -150,6 +153,69 @@ function parseFile(file, label) {
   }
 }
 
+// --- G4: locale callability + literal key coverage -----------------------
+function checkLocale(luaFiles) {
+  const localePath = path.join(addonDir, "Core", "Locale.lua");
+  if (!fs.existsSync(localePath)) {
+    fail("locale check: Core/Locale.lua missing");
+    return;
+  }
+  const localeSrc = fs.readFileSync(localePath, "utf8");
+
+  // 1. L("key") is called across the codebase; L must be callable.
+  const callSites = luaFiles.filter((f) => {
+    if (f === localePath) return false;
+    return /\bL\(\s*"/.test(fs.readFileSync(f, "utf8"));
+  });
+  if (callSites.length > 0 && !/__call/.test(localeSrc)) {
+    fail(
+      "locale: L(\"key\") used in " +
+        callSites.length +
+        " file(s) but Core/Locale.lua defines no __call metamethod " +
+        "(L is a table: every L() call errors at runtime)"
+    );
+    return;
+  }
+
+  // 2. literal keys: collect defined keys from the strings table.
+  const defined = new Set();
+  const defRe = /^\s*([A-Za-z0-9_]+)\s*=\s*"/gm;
+  let m;
+  while ((m = defRe.exec(localeSrc)) !== null) defined.add(m[1]);
+
+  // 3. literal call-site keys (L("x") and Lfmt("x")); dynamic keys
+  //    ("crowd_" .. label) never close the paren right after the key, so
+  //    they are not matched by design.
+  const used = new Map(); // key -> first file
+  const useRe = /\b(?:L|Lfmt)\(\s*"([A-Za-z0-9_]+)"\s*\)/g;
+  for (const f of luaFiles) {
+    const src = fs.readFileSync(f, "utf8");
+    useRe.lastIndex = 0;
+    let u;
+    while ((u = useRe.exec(src)) !== null) {
+      if (!used.has(u[1])) {
+        used.set(u[1], path.relative(addonDir, f));
+      }
+    }
+  }
+  const missing = [...used.keys()].filter((k) => !defined.has(k));
+  if (missing.length > 0) {
+    console.warn(
+      "warn locale keys used but not defined (render as key text): " +
+        missing.join(", ")
+    );
+  }
+  ok(
+    "locale callable (" +
+      callSites.length +
+      " files call L(\"key\"), " +
+      used.size +
+      " literal keys, " +
+      missing.length +
+      " missing)"
+  );
+}
+
 function main() {
   const argv = process.argv.slice(2);
 
@@ -238,6 +304,9 @@ function main() {
 
   // --- G3 media manifest ------------------------------------------------
   checkMedia();
+
+  // --- G4 locale callability + key coverage -----------------------------
+  checkLocale(luaFiles);
 
   report(luaFiles.length, listed.length);
 }

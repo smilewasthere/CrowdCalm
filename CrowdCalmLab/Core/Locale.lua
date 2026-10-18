@@ -210,8 +210,20 @@ local strings = {
   selfcheck_unavailable = "The profiler cannot report this addon's cost on this client.",
   read_memory = "Read own memory",
 }
+-- L supports BOTH styles used across the codebase: L( calls (255+ sites)
+-- and L[key] indexing (used by Lfmt). Missing keys fall back to the key
+-- itself, so a typo shows readable text instead of crashing. The __call
+-- metamethod is the load-bearing part: without it every L( call raises
+-- "attempt to call a table value" (the pre-1.0.0-pre.2 empty-window bug).
 local L = setmetatable(strings, {
   __index = function(_, key)
+    return key
+  end,
+  __call = function(_, key)
+    local v = strings[key]
+    if v ~= nil then
+      return v
+    end
     return key
   end,
 })

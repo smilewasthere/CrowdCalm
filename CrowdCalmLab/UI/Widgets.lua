@@ -322,6 +322,25 @@ function Widgets.Confirm(text, onYes)
   StaticPopup_Show("CCL_CONFIRM", text)
 end
 
+-- Fatal-error popup: works even when our own window failed to build (the
+-- only UI we can rely on in that state is Blizzard's).
+local errorPopupRegistered = false
+
+function Widgets.ErrorPopup(text)
+  if not errorPopupRegistered then
+    StaticPopupDialogs["CCL_ERROR"] = {
+      text = "%s",
+      button1 = OKAY,
+      OnAccept = function() end,
+      timeout = 0,
+      whileDead = true,
+      hideOnEscape = true,
+    }
+    errorPopupRegistered = true
+  end
+  StaticPopup_Show("CCL_ERROR", text)
+end
+
 -- --------------------------------------------------------- count-up ----
 
 local anims = {}
@@ -519,7 +538,9 @@ function Widgets.Ring(parent, size)
   frame:SetSize(size, size)
   local fallbackBar = nil
   local cooldown = nil
-  local ok, cd = pcall(CreateFrame, "Cooldown", frame, nil)
+  -- CreateFrame(type, name, parent): nil name (a frame in the name slot
+  -- silently fell back to the bar every time).
+  local ok, cd = pcall(CreateFrame, "Cooldown", nil, frame)
   if ok and cd then
     cd:SetAllPoints()
     pcall(cd.SetSwipeTexture, cd, ns.skin.mediaPath .. "sweep.tga")

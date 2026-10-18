@@ -48,6 +48,11 @@ read_globals = {
   "UpdateAddOnMemoryUsage",
   "GetAddOnMemoryUsage",
   "SetItemRef",
+  -- minimap button (UI/MinimapButton.lua)
+  "Minimap",
+  "GetCursorPosition",
+  -- static popup confirmation buttons
+  "OKAY",
   -- namespaced namespaces (fields are validated in game, not by luacheck)
   "C_Timer",
   "C_CVar",
