@@ -32,6 +32,11 @@ function Core.DEFAULTS()
       maxEntries = 100,
     },
     hintShown = false,
+    dev = {
+      enabled = false,
+      lastReport = "",
+      tests = {},
+    },
   }
 end
 
@@ -248,6 +253,16 @@ function Core._syncStutterHook()
   end
 end
 
+local function effectiveMode()
+  if Core.dev and Core.dev.forceCrowd then
+    return "crowd"
+  end
+  if Core.crowd then
+    return Core.crowd:GetMode()
+  end
+  return "normal"
+end
+
 function Core._tick(now)
   if not Core.switch or not Core.sv then
     return
@@ -262,10 +277,14 @@ function Core._tick(now)
       Core.switch:TryApply()
       Core._persistState()
     end
+    if Core.dev then
+      Core.dev:OnTick(now)
+    end
     return
   end
 
-  local mode = Core.crowd:Update(now, count)
+  Core.crowd:Update(now, count)
+  local mode = effectiveMode()
   if mode ~= Core.lastMode then
     Core.lastMode = mode
     Core.lastModeChange = now
@@ -280,6 +299,9 @@ function Core._tick(now)
 
   Core._checkHint(now, players, IsResting())
   Core._persistState()
+  if Core.dev then
+    Core.dev:OnTick(now)
+  end
 end
 
 local function collectCurrent(applied)
@@ -301,6 +323,7 @@ local function createFrame()
   Core.frame:SetScript("OnEvent", function(_, event, ...)
     Core._handleEvent(event, ...)
   end)
+  Core.devFrame = CreateFrame("Frame", "CrowdCalmDevFrame", UIParent)
   Core.ticker = C_Timer.NewTicker(1, function()
     Core._tick(GetTime())
   end)
@@ -351,6 +374,30 @@ local function init()
   Core._persistState()
 
   createFrame()
+  Core.dev = ns.Dev.new(db.settings.dev, {
+    getTime = function()
+      return GetTime()
+    end,
+    setFrameHook = function(fn)
+      if Core.devFrame then
+        Core.devFrame:SetScript("OnUpdate", fn)
+      end
+    end,
+    log = function(message)
+      Core._log(message)
+    end,
+    getSnapshot = function()
+      local state = Core.switch and Core.switch:GetState()
+        or { applied = {}, baselines = {}, mode = "normal", pendingReason = nil }
+      return {
+        mode = effectiveMode(),
+        plates = Core.CountPlates(),
+        applied = state.applied,
+        baselines = state.baselines,
+        pendingReason = state.pendingReason,
+      }
+    end,
+  })
   Core._syncStutterHook()
 end
 
@@ -369,15 +416,27 @@ function Core._handleEvent(event, ...)
   if event == "PLAYER_REGEN_ENABLED" then
     Core.switch:OnCombatEnd()
     Core._persistState()
+    if Core.dev then
+      Core.dev:OnTick(GetTime())
+    end
   elseif event == "PLAYER_ENTERING_WORLD" then
     Core.switch:OnEnteringWorld()
     Core._scheduleSpellDensityReapply()
+    if Core.dev then
+      Core.dev:OnTick(GetTime())
+    end
   elseif event == "PLAYER_LOGOUT" then
     Core.switch:OnLogout()
     Core._persistState()
+    if Core.dev then
+      Core.dev:OnLogout(GetTime())
+    end
   elseif event == "CVAR_UPDATE" then
     local cvar, value = ...
     Core.switch:OnCvarChange(cvar, value)
     Core._persistState()
+    if Core.dev then
+      Core.dev:OnCvar(cvar, value)
+    end
   end
 end

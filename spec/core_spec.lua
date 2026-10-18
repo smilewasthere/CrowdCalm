@@ -7,6 +7,7 @@ describe("Core", function()
   stub.loadAddon("Stutter.lua", ns)
   stub.loadAddon("Monitor.lua", ns)
   stub.loadAddon("Panel.lua", ns)
+  stub.loadAddon("Dev.lua", ns)
   stub.loadAddon("Core.lua", ns)
 
   local BASELINES = {
@@ -52,6 +53,24 @@ describe("Core", function()
     for _, line in ipairs(stub.state.printed) do
       if line:find(text, 1, true) then
         return true
+      end
+    end
+    return false
+  end
+
+  local function journalHas(dev, kind, fields)
+    for _, entry in ipairs(dev:GetJournal()) do
+      if entry.kind == kind then
+        local match = true
+        for key, value in pairs(fields) do
+          if entry[key] ~= value then
+            match = false
+            break
+          end
+        end
+        if match then
+          return true
+        end
       end
     end
     return false
@@ -341,6 +360,133 @@ describe("Core", function()
     login()
     local frame = stub.state.framesByName["CrowdCalmFrame"]
     expect(frame):toBeTruthy()
+    expect(frame:GetScript("OnUpdate")):toBeNil()
+  end)
+
+  it("force crowd applies and restores the profile without any plates", function()
+    login()
+    plates(0)
+    ns.Core.dev:SetEnabled(true)
+    ns.Core.dev:SetForceCrowd(true)
+    ns.Core._tick(10)
+    expect(#stub.state.callLog):toBe(5)
+    expect(C_CVar.GetCVar("particleDensity")):toBe("25")
+    ns.Core.dev:SetForceCrowd(false)
+    ns.Core._tick(11)
+    expect(#stub.state.callLog):toBe(10)
+    expect(C_CVar.GetCVar("particleDensity")):toBe("100")
+    ns.Core._tick(12)
+    expect(#stub.state.callLog):toBe(10)
+  end)
+
+  it("slash command registers and persists dev mode", function()
+    login()
+    _G.SlashCmdList.CROWDCALMDEV("on")
+    expect(_G.CrowdCalmDB.settings.dev.enabled):toBe(true)
+    _G.SlashCmdList.CROWDCALMDEV("off")
+    expect(_G.CrowdCalmDB.settings.dev.enabled):toBe(false)
+    _G.SlashCmdList.CROWDCALMDEV("bogus")
+    expect(printedContains("usage")):toBe(true)
+  end)
+
+  it("normalizes corrupt dev settings at init", function()
+    resetSession()
+    primeKnown()
+    _G.CrowdCalmDB = {
+      schemaVersion = 1,
+      settings = { dev = { enabled = "yes", lastReport = 5, tests = "x" } },
+    }
+    ns.Core._handleEvent("ADDON_LOADED", "CrowdCalm")
+    expect(_G.CrowdCalmDB.settings.dev.enabled):toBe(false)
+    expect(_G.CrowdCalmDB.settings.dev.lastReport):toBe("")
+    expect(type(_G.CrowdCalmDB.settings.dev.tests)):toBe("table")
+  end)
+
+  it("player path stays silent while dev mode is off", function()
+    login()
+    plates(16)
+    ns.Core._tick(10)
+    ns.Core._tick(13.1)
+    expect(#ns.Core.dev:GetJournal()):toBe(0)
+    local frame = stub.state.framesByName["CrowdCalmDevFrame"]
+    expect(frame):toBeTruthy()
+    expect(frame:GetScript("OnUpdate")):toBeNil()
+  end)
+
+  it("dev enabled journals crowd transitions and applies", function()
+    login()
+    ns.Core.dev:SetEnabled(true)
+    plates(16)
+    ns.Core._tick(10)
+    ns.Core._tick(13.1)
+    expect(journalHas(ns.Core.dev, "mode", { to = "crowd" })):toBe(true)
+    expect(journalHas(ns.Core.dev, "apply", { cvar = "particleDensity", value = "25", baseline = "100" })):toBe(true)
+    plates(0)
+    ns.Core._tick(20)
+    ns.Core._tick(25.1)
+    expect(journalHas(ns.Core.dev, "restore", { cvar = "particleDensity", value = "100" })):toBe(true)
+  end)
+
+  it("full auto AB test drives the real switch", function()
+    login()
+    ns.Core.dev:SetEnabled(true)
+    stub.state.time = 10
+    ns.Core.dev:StartTest("auto", { phaseSeconds = 30, rounds = "AB" })
+    local frame = stub.state.framesByName["CrowdCalmDevFrame"]
+    local hook = frame:GetScript("OnUpdate")
+    expect(hook):toBeTruthy()
+    for i = 1, 20 do
+      stub.state.time = 10 + i * 0.025
+      hook(frame)
+    end
+    ns.Core._tick(11)
+    stub.state.time = 41
+    ns.Core._tick(41)
+    expect(ns.Core.dev.forceCrowd):toBe(false)
+    for i = 1, 10 do
+      stub.state.time = 41 + i * 0.025
+      hook(frame)
+    end
+    stub.state.time = 71.5
+    ns.Core._tick(71.5)
+
+    expect(#stub.state.callLog):toBe(10)
+    local applied, restored = {}, {}
+    for i = 1, 5 do
+      applied[stub.state.callLog[i].name] = stub.state.callLog[i].value
+    end
+    for i = 6, 10 do
+      restored[stub.state.callLog[i].name] = stub.state.callLog[i].value
+    end
+    expect(applied.particleDensity):toBe("25")
+    expect(restored.particleDensity):toBe("100")
+    expect(restored.graphicsShadowQuality):toBe("3")
+    expect(ns.Core.dev.forceCrowd):toBe(false)
+    expect(ns.Core.dev:GetStatus().mode):toBe("idle")
+    expect(_G.CrowdCalmDB.settings.dev.lastReport:find("PHASE COMPARISON", 1, true) ~= nil):toBe(true)
+    expect(_G.CrowdCalmDB.settings.dev.lastReport:find("frames /", 1, true) ~= nil):toBe(true)
+    expect(#_G.CrowdCalmDB.settings.dev.tests):toBe(1)
+  end)
+
+  it("logout mid-test aborts and persists a partial report", function()
+    login()
+    ns.Core.dev:SetEnabled(true)
+    ns.Core.dev:StartTest("passive")
+    ns.Core._handleEvent("PLAYER_LOGOUT")
+    expect(ns.Core.dev:GetStatus().recording):toBe(false)
+    expect(_G.CrowdCalmDB.settings.dev.lastReport ~= ""):toBe(true)
+  end)
+
+  it("installs the DEV frame hook only while recording", function()
+    login()
+    local frame = stub.state.framesByName["CrowdCalmDevFrame"]
+    expect(frame):toBeTruthy()
+    expect(frame:GetScript("OnUpdate")):toBeNil()
+    ns.Core.dev:SetEnabled(true)
+    expect(frame:GetScript("OnUpdate")):toBeNil()
+    ns.Core.dev:StartTest("passive")
+    expect(frame:GetScript("OnUpdate")):toBeTruthy()
+    ns.Core.dev:StopTest("manual")
     expect(frame:GetScript("OnUpdate")):toBeNil()
   end)
 end)
