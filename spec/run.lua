@@ -18,6 +18,7 @@ local specs = {
   "core_spec",
   "monitor_spec",
   "panel_spec",
+  "dev_spec",
 }
 
 for _, name in ipairs(specs) do
