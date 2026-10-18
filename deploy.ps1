@@ -17,6 +17,8 @@ $runtimeFiles = @(
     "Stutter.lua",
     "Monitor.lua",
     "Panel.lua",
+    "Dev.lua",
+    "DevWindow.lua",
     "Core.lua"
 )
 

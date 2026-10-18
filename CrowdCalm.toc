@@ -2,7 +2,7 @@
 ## Title: CrowdCalm
 ## Notes: Auto-switches a graphics profile when crowds appear
 ## Author: Nightly
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: CrowdCalmDB
 Crowd.lua
 Profiles.lua
@@ -11,4 +11,6 @@ Switch.lua
 Stutter.lua
 Monitor.lua
 Panel.lua
+Dev.lua
+DevWindow.lua
 Core.lua

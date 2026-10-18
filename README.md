@@ -6,6 +6,8 @@ when they clear.
 
 - Design and architecture: `docs/specs/crowdcalm-design.md`
 - Implementation plan: `docs/superpowers/plans/2026-10-18-crowdcalm.md`
+- Dev mode design: `docs/specs/crowdcalm-dev-mode-design.md`
+- Dev mode plan: `docs/superpowers/plans/2026-10-18-crowdcalm-dev-mode.md`
 
 ## How it works
 
@@ -116,6 +118,52 @@ debounce.
   CrowdCalm queues the switch instead. Expect a one-tick delay after you
   leave combat.
 
+## Developer mode
+
+Off by default; `/ccdev on` enables it and the choice persists. While it
+is off, none of the dev code runs and the addon behaves exactly like the
+player version.
+
+| Command | Effect |
+| --- | --- |
+| `/ccdev on` / `/ccdev off` | Enable / disable developer mode (persisted) |
+| `/ccdev` | Toggle the dev window |
+| `/ccdev status` | One status line |
+| `/ccdev report` | Where to find the report |
+
+The dev window (`CrowdCalm Dev`) offers:
+
+- a live status line (`mode | plates N | FPS | MB | dev v0.2.0`) and a
+  **Force crowd** checkbox — when checked the profile applies as if a
+  crowd were present, so tests work anywhere. Force is never saved: every
+  login starts with it off;
+- **All features OFF / ON** plus the same feature checkboxes as the player
+  panel; toggles take effect immediately (they re-run the switch rebuild);
+- test controls: mode (**Auto / Guided / Passive**), phase length
+  (**30s / 60s / 120s**), a **Rounds** checkbox (checked = ABAB, unchecked
+  = AB), **START**, **Next phase** (guided mode), **STOP**;
+- **Copy report** / **Copy last test** — renders the report into the text
+  box and selects it; Ctrl+C copies it. The same text is stored in
+  `CrowdCalmDB.settings.dev.lastReport` (last 60000 characters), so it
+  survives `/reload` and ends up in the WTF SavedVariables file.
+
+Test modes:
+
+- **Passive** — records plates, mode changes, applies/restores, memory and
+  slow frames while you play; nothing is flipped automatically.
+- **Guided** — starts in phase A with force-crowd on; press **Next phase**
+  to flip to B (profile off) and back as often as you like; **STOP** ends.
+- **Auto** — the engine flips force-crowd by itself (AB or ABAB with the
+  chosen phase length) and stops when the rounds are done. It aborts —
+  keeping the partial data — when a flip is blocked by combat or an apply
+  does not take effect within 2 s.
+
+Reports are plain text: header (date, version, character, zone), phase
+comparison (frames, average FPS, 1% low, verdict), memory samples, switch
+timeline, your own cvar changes, failures/notes, and the slowest frames.
+Copy one somewhere pasteable (chat file, issue, note) to share it; the
+sample size is what it is — conclusions come from comparing A and B.
+
 ## Development
 
 - Tests: `luajit spec/run.lua` (LuaJIT; the suite is a pure-Lua harness
@@ -146,3 +194,21 @@ Run on the player's machine (requires an actual retail client):
    timestamp, delta and context without errors.
 10. Watch the chat frame for Lua errors or `tainted` messages during all
     of the above — there must be none.
+
+### Developer mode
+
+11. `/ccdev on`, then `/reload`: dev mode is still on (`/ccdev` opens the
+    window); `/ccdev off` turns it back off.
+12. Check **Force crowd**: the profile applies without a real crowd
+    (visible particles / shadows change); unchecking it restores your
+    original values.
+13. Run an **Auto** AB test with 30 s phases: after ~1 minute a result
+    line appears, the report box fills, and every managed cvar is back to
+    its pre-test value.
+14. **Copy report**, paste into a text editor: a readable report with
+    header, comparison, timeline and slow-frame sections.
+15. Force-close WoW (or `/reload`) mid-test: after relaunch, force crowd
+    is off, cvars match your original settings, and the partial report is
+    in `CrowdCalmDB.settings.dev.lastReport`.
+16. `/ccdev off`: `/ccdev` shows the off hint and gameplay is identical to
+    the player version (no dev frame, no journal, no extra work).
