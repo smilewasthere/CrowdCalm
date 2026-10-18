@@ -70,6 +70,10 @@ local function onTick()
   ns.stats.Push(fps)
   if okProfiler then
     ns.stats.AddLong(scratch[1], scratch[2], scratch[3], scratch[4])
+    -- session-long accumulation for the Overview per-minute cards (review I3)
+    for i = 1, 4 do
+      Meter.totals[i] = Meter.totals[i] + scratch[i]
+    end
   end
   if ns.lab and ns.lab.OnSample then
     ns.lab.OnSample(fps)

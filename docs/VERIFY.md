@@ -111,9 +111,10 @@ note the result in this file (or tell the addon author).
 23. **Does the addon compartment callback fire with the expected
     signature?** Click the compartment icon; the window should toggle.
     `/dump CrowdCalmLab_OnAddonCompartmentClick ~= nil`
-24. **Which SetGradient argument shape is accepted** (color-table or
-    numeric)? The addon pcalls both; visually confirm the header gradient
-    is not a flat block.
+24. **Does SetGradient exist on Texture objects on both clients, and in
+    which argument shape** (color-table or numeric)? The addon applies the
+    gradient to a BACKGROUND texture (not the frame) and pcalls both
+    shapes; visually confirm the header gradient is not a flat block.
 25. **Does StaticPopupDialogs accept the "%s" text pattern with a long
     multi-line string** (the restore prompt lists up to six settings)?
     Trigger it by changing a graphics setting manually after a clean

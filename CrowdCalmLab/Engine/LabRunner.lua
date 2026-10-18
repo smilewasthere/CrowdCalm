@@ -43,6 +43,7 @@ local hitchWorst = nil
 local hitchWindow = 0
 
 local snapA1, snapB, snapA2 = nil, nil, nil
+local hitchApply = nil -- worst FPS in the 1 s window after the apply (review I4)
 
 local function cancelTimer()
   if phaseTimer then
@@ -188,11 +189,13 @@ phaseA1Done = function()
   end
   hitchWorst = nil
   hitchWindow = 1.0
+  hitchApply = nil
   setPhase(labSettings().settleSeconds, phasePreB)
 end
 
 phasePreB = function()
   Lab.progress.phase = "sample"
+  hitchApply = hitchWorst -- keep the apply-moment hitch (review I4)
   ns.stats.Reset()
   setPhase(labSettings().sampleSeconds, phaseBDone)
 end
@@ -222,9 +225,9 @@ phaseA2Done = function()
   local noisyFlag = ns.stats.noisy(snapA1.avg, snapA2.avg)
   local hitchFlag = false
   local hitchFps = nil
-  if hitchWorst and snapA1.avg > 0 then
-    hitchFps = hitchWorst
-    if ((snapA1.avg - hitchWorst) / snapA1.avg) > 0.20 then
+  if hitchApply and snapA1.avg > 0 then
+    hitchFps = hitchApply
+    if ((snapA1.avg - hitchApply) / snapA1.avg) > 0.20 then
       hitchFlag = true
     end
   end
@@ -299,6 +302,21 @@ function ns.lab.StartJob()
   local j = currentJob()
   if not j then
     ns.lab.FinishRun()
+    return
+  end
+  -- re-check the instance rule at every job boundary (review M13): zoning
+  -- into a dungeon mid-run must abort like the combat rule does.
+  local okInst, _, instType = pcall(GetInstanceInfo)
+  if okInst and instType and instType ~= "none" then
+    cancelTimer()
+    ns.meter.Release()
+    ns.cvarGuard.EndTest()
+    Lab.state = "idle"
+    Lab.progress.phase = ""
+    Lab.lastError = { key = "instance", value = instType }
+    rows = {}
+    jobs = {}
+    jobIndex = 1
     return
   end
   j.results = {}
@@ -396,8 +414,8 @@ function Lab.Run(runMode, selectedIds)
     Lab.lastError = { key = "noapi" }
     return false, "noapi"
   end
-  local instType = select(2, (pcall(GetInstanceInfo)))
-  if instType and instType ~= "none" then
+  local okInst, _, instType = pcall(GetInstanceInfo)
+  if okInst and instType and instType ~= "none" then
     Lab.lastError = { key = "instance", value = instType }
     return false, "instance"
   end

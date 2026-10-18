@@ -30,9 +30,9 @@ else
   interface, how = nil, "GetBuildInfo-failed"
 end
 
-local version = tostring(a or "?")
-local build = tostring(b or "?")
-local dateStr = tostring(c or "?")
+local version = ok and tostring(a or "?") or "?"
+local build = ok and tostring(b or "?") or "?"
+local dateStr = ok and tostring(c or "?") or "?"
 local major = tonumber(version:match("^(%d+)"))
 
 Compat.interface = interface or 0

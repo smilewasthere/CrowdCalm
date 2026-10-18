@@ -55,6 +55,8 @@ local function tileFor(parent, cand, onSelectionChanged)
   local valueText = Widgets.Text(card, "small", Lfmt("current_value", value))
   valueText:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
   Skin.ColorText(valueText, ns.palette.textDim)
+  card.valueText = valueText
+  card.candKey = cand.key
 
   -- badges: safety, scope, cost
   local safetyText, safetyColor
@@ -113,7 +115,7 @@ local function tileFor(parent, cand, onSelectionChanged)
 end
 
 local function create(parent)
-  local frame = CreateFrame("Frame", nil, parent)
+  local frame = parent
   local pad = 12
 
   -- guided strip
@@ -145,25 +147,34 @@ local function create(parent)
   end
 
   local refreshRunButton -- forward-declared; defined below the controls
+  local tileCache = {} -- cand.id -> tile (bounded pool; review I9)
 
   local function rebuildTiles()
-    for _, t in ipairs(tileFrames) do
+    for _, t in pairs(tileCache) do
       t:Hide()
     end
-    tileFrames = {}
     local visible = math.floor(grid:GetHeight() / (TILE_H + TILE_GAP))
     local n = #allCandidates
     local maxOffset = math.max(0, n - visible)
     if offset > maxOffset then
       offset = maxOffset
     end
+    tileFrames = {}
     for i = 1, math.min(visible, n) do
       local cand = allCandidates[offset + i]
-      local tile = tileFor(grid, cand, function()
-        if refreshRunButton then
-          refreshRunButton()
-        end
-      end)
+      local tile = tileCache[cand.id]
+      if not tile then
+        tile = tileFor(grid, cand, function()
+          if refreshRunButton then
+            refreshRunButton()
+          end
+        end)
+        tileCache[cand.id] = tile
+      end
+      if tile.candKey then
+        local v = ns.cvarGuard.Read(tile.candKey)
+        tile.valueText:SetText(Lfmt("current_value", tostring(v or "?")))
+      end
       tile:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, -((i - 1) * (TILE_H + TILE_GAP)))
       tile:SetPoint("TOPRIGHT", grid, "TOPRIGHT", 0, -((i - 1) * (TILE_H + TILE_GAP)))
       tile:SetHeight(TILE_H)
@@ -295,6 +306,7 @@ local function create(parent)
   local lastRunId = ns.db.lastRunId or 0
   local lastCompleted = ns.lab.completedAt
   local lastPhase = nil
+  local lastSeenError = nil
 
   local function refreshOverlay()
     local running = ns.lab.IsRunning()
@@ -352,10 +364,18 @@ local function create(parent)
   frame.refresh = function()
     refreshOverlay()
     refreshGuide()
+    -- surface a silent abort (combat/instance/foreign) as a banner (I2)
+    local err = ns.lab.lastError
+    if not ns.lab.IsRunning() and err and err ~= lastSeenError then
+      lastSeenError = err
+      local key = "err_" .. (err.key or "?")
+      ns.ui.ShowBanner(L(key) or tostring(err.key), "danger", 8)
+    end
     if not ns.lab.IsRunning() and ns.lab.completedAt and ns.lab.completedAt ~= lastCompleted then
       lastCompleted = ns.lab.completedAt
+      lastSeenError = nil
       ns.ui.ShowBanner(L("lab_done"), "gainColor", 8)
-      ns.ui.SwitchPage(4)
+      ns.ui.SwitchPage(3) -- Results (review I10)
     end
   end
   return frame

@@ -9,7 +9,7 @@ local L = ns.L
 local Lfmt = ns.Lfmt
 
 local function create(parent)
-  local frame = CreateFrame("Frame", nil, parent)
+  local frame = parent
   local pad = 12
 
   -- toolbar
@@ -154,6 +154,7 @@ local function create(parent)
             Widgets.Confirm(Lfmt("addons_disable_confirm", entry2.title), function()
               local ok = ns.addonCost.DisableOnReload(entry2.name)
               if ok then
+                entry2.pendingDisable = true -- survives re-render (review M2)
                 row.badge:SetText(L("addons_disable_pending"))
                 Skin.ColorText(row.badge, ns.palette.danger)
               end

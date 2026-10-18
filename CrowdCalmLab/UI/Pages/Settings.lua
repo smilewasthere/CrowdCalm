@@ -15,7 +15,7 @@ local function sectionLabel(parent, text, y)
 end
 
 local function create(parent)
-  local frame = CreateFrame("Frame", nil, parent)
+  local frame = parent
   local ui = ns.db.settings.ui
   local lab = ns.db.settings.lab
   local y = -12

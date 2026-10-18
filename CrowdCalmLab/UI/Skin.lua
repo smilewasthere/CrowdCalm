@@ -66,50 +66,70 @@ end
 -- ---------------------------------------------------------- gradients ----
 
 function Skin.VerticalGradient(frame, topColor, bottomColor)
+  -- SetGradient lives on TextureBase, not Frame: apply it to a dedicated
+  -- BACKGROUND texture parented to the frame (review I11).
   local function withAlpha(c)
     return { r = c.r, g = c.g, b = c.b, a = c.a or 1 }
   end
   local top, bottom = withAlpha(topColor), withAlpha(bottomColor)
-  local ok = pcall(frame.SetGradient, frame, "VERTICAL", top, bottom)
+  local tex = frame:CreateTexture(nil, "BACKGROUND")
+  tex:SetAllPoints()
+  local ok = pcall(tex.SetGradient, tex, "VERTICAL", top, bottom)
   if ok then
-    return true
+    return tex
   end
-  -- old numeric-argument shape, still seen on some clients
   ok = pcall(
-    frame.SetGradient,
-    frame,
+    tex.SetGradient,
+    tex,
     "VERTICAL",
     top.r, top.g, top.b, top.a,
     bottom.r, bottom.g, bottom.b, bottom.a
   )
-  return ok
+  if ok then
+    return tex
+  end
+  tex:Hide()
+  return nil
 end
 
 -- ----------------------------------------------------------- panels ----
 
--- Creates the base surface: colored fill, 1px bronze border, optional
--- vignette overlay. frame may be any region-owning frame.
+-- Creates the base surface: colored fill on a BACKGROUND texture (frames
+-- have no SetColorTexture — review C1), 1 px bronze border anchored to the
+-- corners so it follows resizes, optional vignette overlay.
 function Skin.ApplyPanel(frame, opts)
   opts = opts or {}
   local p = ns.palette
   local base = opts.base or p.panel
   local alpha = opts.alpha or 1
 
-  frame:SetColorTexture(base.r, base.g, base.b, alpha)
+  local fill = frame:CreateTexture(nil, "BACKGROUND")
+  fill:SetAllPoints()
+  fill:SetColorTexture(base.r, base.g, base.b, alpha)
 
-  -- 1 px inner border (four thin edge textures)
+  -- 1 px inner border (four thin edge textures, corner-anchored so they
+  -- follow resizes)
   local border = opts.border or p.line
-  local function edge(point, w, h, x, y)
+  local function hEdge(topPoint, bottomPoint)
     local tex = frame:CreateTexture(nil, "BORDER")
     tex:SetColorTexture(border.r, border.g, border.b, opts.borderAlpha or 0.9)
-    tex:SetSize(w, h)
-    tex:SetPoint(point, x, y)
+    tex:SetPoint(topPoint)
+    tex:SetPoint(bottomPoint)
+    tex:SetHeight(1)
     return tex
   end
-  edge("TOPLEFT", frame:GetWidth(), 1, 0, 0)
-  edge("BOTTOMLEFT", frame:GetWidth(), 1, 0, 0)
-  edge("TOPLEFT", 1, frame:GetHeight(), 0, 0)
-  edge("TOPRIGHT", 1, frame:GetHeight(), 0, 0)
+  local function vEdge(leftPoint, rightPoint)
+    local tex = frame:CreateTexture(nil, "BORDER")
+    tex:SetColorTexture(border.r, border.g, border.b, opts.borderAlpha or 0.9)
+    tex:SetPoint(leftPoint)
+    tex:SetPoint(rightPoint)
+    tex:SetWidth(1)
+    return tex
+  end
+  hEdge("TOPLEFT", "TOPRIGHT")
+  hEdge("BOTTOMLEFT", "BOTTOMRIGHT")
+  vEdge("TOPLEFT", "BOTTOMLEFT")
+  vEdge("TOPRIGHT", "BOTTOMRIGHT")
 
   if opts.vignette then
     local vign = frame:CreateTexture(nil, "ARTWORK")
@@ -216,6 +236,16 @@ function Skin.Button(btn, opts)
   label:SetPoint("CENTER")
   label:SetText(opts.label or "")
   btn.text = label
+
+  -- disabled state (review M9): dim the label, drop the glow
+  btn:HookScript("OnDisable", function(self)
+    label:SetTextColor(ns.palette.textDim.r, ns.palette.textDim.g, ns.palette.textDim.b, 1)
+    normal:SetVertexColor(0.5, 0.5, 0.5, 0.6)
+  end)
+  btn:HookScript("OnEnable", function(self)
+    label:SetTextColor(ns.palette.text.r, ns.palette.text.g, ns.palette.text.b, 1)
+    normal:SetVertexColor(1, 1, 1, 1)
+  end)
   return btn
 end
 

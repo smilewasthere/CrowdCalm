@@ -25,7 +25,7 @@ local function formatTime(t)
 end
 
 local function create(parent)
-  local frame = CreateFrame("Frame", nil, parent)
+  local frame = parent
   local pad = 12
 
   local enableBox = Widgets.Checkbox(frame, {

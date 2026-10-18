@@ -242,6 +242,14 @@ function Guard.Restore(name)
   if InCombatLockdown() then
     queued = queued or {}
     queued[name] = entry.original
+    -- the restore is committed: it fires at PLAYER_REGEN_ENABLED. Mark the
+    -- entry released NOW so RestoreAll/IsHolding reflect reality and the
+    -- regen handler can drop it (review I1).
+    entry.applied = nil
+    entry.released = true
+    if ns.db and ns.db.lastApplied then
+      ns.db.lastApplied[name] = nil
+    end
     return false, "queued"
   end
   restoringSelf = true
@@ -317,14 +325,16 @@ end)
 -- ------------------------------------------------------ combat handling ----
 
 ns.events.Register("PLAYER_REGEN_DISABLED", function()
-  -- rule 1: combat started mid-test -> stop and restore (queue if needed)
+  -- rule 1: combat started mid-test -> stop and restore (queue if needed).
+  -- onCombatAbort fires unconditionally so a run caught during its first
+  -- A1 sample (nothing held yet) is still stopped and reported (review I2).
   if held then
     for name in pairs(held.names) do
       Guard.Restore(name) -- queues when the client refuses in combat
     end
-    if Guard.onCombatAbort then
-      Guard.onCombatAbort()
-    end
+  end
+  if Guard.onCombatAbort then
+    Guard.onCombatAbort()
   end
 end)
 

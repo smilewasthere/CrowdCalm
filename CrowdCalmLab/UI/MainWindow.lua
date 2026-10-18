@@ -8,6 +8,8 @@ local ADDON_NAME, ns = ...
 local Util = ns.util
 local Skin = ns.skin
 local Widgets = ns.widgets
+local L = ns.L
+local Lfmt = ns.Lfmt
 
 local UI = {}
 ns.ui = UI
@@ -208,8 +210,9 @@ function UI.ShowBanner(text, colorName, seconds)
     bannerTimer:Cancel()
     bannerTimer = nil
   end
-  local dur = Skin.MotionMs(1) > 0 and (seconds or 6) or 0
-  bannerTimer = C_Timer.After(dur, function()
+  -- feedback duration is independent of reduce-motion (review I6): motion
+  -- settings remove animation, not information.
+  bannerTimer = C_Timer.After(seconds or 6, function()
     bannerFrame:Hide()
     bannerTimer = nil
   end)
@@ -224,11 +227,11 @@ local function buildFooter(parent)
   footer:SetHeight(FOOTER_H)
   Skin.ApplyPanel(footer, { base = ns.palette.obsidian, borderAlpha = 0.4 })
 
-  statusCombat = Widgets.Text(footer, "small", "Combat: —")
+  statusCombat = Widgets.Text(footer, "small", L("status_combat_out"))
   statusCombat:SetPoint("LEFT", footer, "LEFT", 16, 0)
-  statusInstance = Widgets.Text(footer, "small", "Traffic: —")
+  statusInstance = Widgets.Text(footer, "small", L("status_instance_none"))
   statusInstance:SetPoint("LEFT", statusCombat, "RIGHT", 24, 0)
-  statusBaseline = Widgets.Text(footer, "small", "Baseline: —")
+  statusBaseline = Widgets.Text(footer, "small", L("status_baseline_missing"))
   statusBaseline:SetPoint("LEFT", statusInstance, "RIGHT", 24, 0)
 
   local restore = Widgets.Button(footer, {
@@ -247,8 +250,19 @@ end
 
 function UI.RequestRestore()
   if ns.cvarGuard.IsHolding() then
-    ns.lab.Cancel()
-    UI.ShowBanner("Test ended — settings restored.", "gainColor", 6)
+    if ns.lab.IsRunning() then
+      ns.lab.Cancel()
+      UI.ShowBanner(L("err_cancelled"), "gainColor", 6)
+    else
+      -- held CVars but no running lab (e.g. queued restores pending):
+      -- restore everything now if out of combat, otherwise say so.
+      if InCombatLockdown() then
+        UI.ShowBanner(L("status_combat_in") .. " — will restore after combat.", "costColor", 6)
+      else
+        ns.cvarGuard.RestoreAll()
+        UI.ShowBanner(L("restore_done"), "gainColor", 6)
+      end
+    end
     return
   end
   local mismatches = ns.cvarGuard.Mismatches()
@@ -294,8 +308,13 @@ function UI.SwitchPage(index)
   currentPage = index
   ns.db.ui.page = index
   if not pageFrames[index] then
-    pageFrames[index] = def.create(contentArea)
-    pageFrames[index]:Hide()
+    -- pre-size the container BEFORE create() runs so any GetWidth/GetHeight
+    -- math inside the page sees real numbers (review I5). Pages build their
+    -- content directly into this container and return it.
+    local container = CreateFrame("Frame", nil, contentArea)
+    container:SetAllPoints(contentArea)
+    container:Hide()
+    pageFrames[index] = def.create(container) or container
     pageFrames[index]:SetAllPoints(contentArea)
   end
   pageFrames[index]:Show()
@@ -379,13 +398,20 @@ local function ensureWindow()
         fpsText:SetText(string.format("%.0f", fps))
         ns.context.Update()
         if statusCombat then
-          statusCombat:SetText(InCombatLockdown() and "Combat: yes" or "Combat: no")
+          statusCombat:SetText(InCombatLockdown() and L("status_combat_in") or L("status_combat_out"))
         end
         if statusInstance then
-          statusInstance:SetText("Traffic: " .. (ns.context and ns.context.Label() or "—"))
+          local snap = ns.context.Snapshot()
+          if snap and snap.instanceType and snap.instanceType ~= "none" then
+            statusInstance:SetText(Lfmt("status_instance_some", snap.instanceType))
+            Skin.ColorText(statusInstance, ns.palette.costColor())
+          else
+            statusInstance:SetText(L("status_instance_none"))
+            Skin.ColorText(statusInstance, ns.palette.text)
+          end
         end
         if statusBaseline then
-          statusBaseline:SetText(ns.cvarGuard.HasBaseline() and "Baseline: saved" or "Baseline: none")
+          statusBaseline:SetText(ns.cvarGuard.HasBaseline() and L("status_baseline_saved") or L("status_baseline_missing"))
         end
         local def = pageDefs[currentPage]
         if def and def.onTick then

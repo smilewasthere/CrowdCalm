@@ -9,7 +9,7 @@ local L = ns.L
 local Lfmt = ns.Lfmt
 
 local function create(parent)
-  local frame = CreateFrame("Frame", nil, parent)
+  local frame = parent
   local pad = 16
 
   local version = "1.0.0"

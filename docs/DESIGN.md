@@ -93,6 +93,13 @@ intentional globals are:
 6. **UI page title overlay omitted.** The rail highlight and banner carry
    the current-page context; a separate per-page title row was cut to keep
    content area maximal on the 920×600 frame.
+7. **Custom row list has no visible scrollbar.** Widgets.RowList scrolls by
+   mouse wheel only (a thin thumb indicator is future work); the client's
+   own keyboard focus traversal is left alone.
+8. **Pages build into a pre-sized container** passed by MainWindow
+   (`def.create(container)`), so create-time `GetWidth()` math is valid —
+   this differs from the brief's "lazy create a frame" phrasing but is
+   required for the timeline strip and paragraph wrapping to size correctly.
 
 ## Testing philosophy
 

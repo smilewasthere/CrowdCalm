@@ -482,7 +482,7 @@ function Widgets.ArcGauge(parent, size)
     pcall(seg.SetRotation, seg, angle - math.pi / 2)
     segs[i] = seg
   end
-  frame.value = 0
+  frame.value = -1 -- sentinel so the first SetValue(0) paints (review M3)
 
   function frame:SetValue(v)
     v = math.max(0, math.min(1, v or 0))

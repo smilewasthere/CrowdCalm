@@ -31,7 +31,7 @@ local function addCardLine(card, textKey)
 end
 
 local function create(parent)
-  local frame = CreateFrame("Frame", nil, parent)
+  local frame = parent
   local pad = 12
   local cardW = math.floor((parent:GetWidth() - pad * 2 - 24) / 3)
 

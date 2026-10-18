@@ -6,7 +6,7 @@
 local ADDON_NAME, ns = ...
 
 -- Compartment click signature varies across clients; any args are ignored
--- and the click always toggles the window. Verified in-game: see VERIFY.md.
+-- and the click always toggles the window. Assumed correct; see VERIFY.md #23.
 function CrowdCalmLab_OnAddonCompartmentClick()
   ns.ui.Toggle()
 end
