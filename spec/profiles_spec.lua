@@ -56,6 +56,19 @@ describe("Profiles", function()
     expect(valueOf(byName, "maxFPSBk")):toBe("60")
   end)
 
+  it("uses the configured frame cap value for the framecap category", function()
+    local entries = ns.Profiles.Select({ categories = { framecap = true }, framecapValue = 120 }, fullEnv())
+    local byName = map(entries)
+    expect(valueOf(byName, "maxFPS")):toBe("120")
+    expect(valueOf(byName, "maxFPSBk")):toBe("120")
+  end)
+
+  it("falls back to the default frame cap value when unset", function()
+    local entries = ns.Profiles.Select({ categories = { framecap = true } }, fullEnv())
+    local byName = map(entries)
+    expect(valueOf(byName, "maxFPS")):toBe("60")
+  end)
+
   it("skips unknown cvars with an unknown reason", function()
     local entries, skipped = ns.Profiles.Select({}, fullEnv({
       isKnown = function(cvar)

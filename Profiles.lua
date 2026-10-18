@@ -3,8 +3,8 @@ local ADDON_NAME, ns = ...
 local Profiles = {}
 ns.Profiles = Profiles
 
-local function def(cvar, value, category)
-  return { cvar = cvar, value = value, category = category }
+local function def(cvar, value, category, valueKey)
+  return { cvar = cvar, value = value, category = category, valueKey = valueKey }
 end
 
 Profiles.Categories = {
@@ -24,8 +24,8 @@ Profiles.Definitions = {
   def("groundEffectDist", "70", "clutter"),
   def("graphicsShadowQuality", "1", "shadows"),
   def("graphicsViewDistance", "6", "viewdistance"),
-  def("maxFPS", "60", "framecap"),
-  def("maxFPSBk", "60", "framecap"),
+  def("maxFPS", "60", "framecap", "framecapValue"),
+  def("maxFPSBk", "60", "framecap", "framecapValue"),
   def("spellVisualDensityFilterSetting", "1", "spelldensity"),
   { category = "targetfps", discover = "targetfps", value = "60" },
 }
@@ -77,9 +77,16 @@ function Profiles.Select(settings, env)
         elseif env.isReadOnly and env.isReadOnly(cvar) then
           skipped[cvar] = "read-only"
         else
+          local value = definition.value
+          if definition.valueKey then
+            local override = settings[definition.valueKey]
+            if type(override) == "number" then
+              value = tostring(math.floor(override))
+            end
+          end
           entries[#entries + 1] = {
             cvar = cvar,
-            value = definition.value,
+            value = value,
             category = definition.category,
             secure = (env.isSecure and env.isSecure(cvar)) or false,
           }

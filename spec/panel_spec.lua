@@ -110,6 +110,26 @@ describe("Panel", function()
     expect(ns.Core.sv.settings.enabled):toBe(true)
   end)
 
+  it("toggles the stutter log from the panel and the slash command", function()
+    fakeCore({ enabled = true, stutter = { enabled = false } })
+    local synced = 0
+    ns.Core._syncStutterHook = function()
+      synced = synced + 1
+    end
+    ns.Panel.Create()
+    local stutter = stub.state.framesByName["CrowdCalmPanelStutter"]
+    expect(stutter):toBeTruthy()
+    stutter:Click()
+    expect(ns.Core.sv.settings.stutter.enabled):toBe(true)
+    expect(synced):toBe(1)
+    ns.Panel.RunCommand("stutter off")
+    expect(ns.Core.sv.settings.stutter.enabled):toBe(false)
+    expect(synced):toBe(2)
+    local before = #stub.state.printed
+    ns.Panel.RunCommand("stutter")
+    expect(#stub.state.printed):toBe(before + 1)
+  end)
+
   it("toggles the panel visibility on a bare command", function()
     fakeCore({ enabled = true })
     local frame = ns.Panel.Create()

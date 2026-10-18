@@ -5,6 +5,8 @@ describe("Core", function()
   stub.loadAddon("Restore.lua", ns)
   stub.loadAddon("Switch.lua", ns)
   stub.loadAddon("Stutter.lua", ns)
+  stub.loadAddon("Monitor.lua", ns)
+  stub.loadAddon("Panel.lua", ns)
   stub.loadAddon("Core.lua", ns)
 
   local BASELINES = {
@@ -163,6 +165,18 @@ describe("Core", function()
     end
   end)
 
+  it("skips cvars the client reports as nil, not just ones that error", function()
+    resetSession()
+    stub.state.getInfoNilMode = true
+    primeKnown("particleDensity")
+    ns.Core._handleEvent("ADDON_LOADED", "CrowdCalm")
+    expect(printedContains("particleDensity")):toBe(true)
+    plates(16)
+    ns.Core._tick(10)
+    ns.Core._tick(13.1)
+    expect(#stub.state.callLog):toBe(4)
+  end)
+
   it("re-applies spell density after entering world while crowd persists", function()
     resetSession()
     primeKnown()
@@ -202,6 +216,26 @@ describe("Core", function()
     expect(#stub.state.callLog):toBe(0)
   end)
 
+  it("does not re-apply spell density while in combat", function()
+    resetSession()
+    primeKnown()
+    _G.CrowdCalmDB = {
+      schemaVersion = 1,
+      settings = { categories = { spelldensity = true } },
+    }
+    ns.Core._handleEvent("ADDON_LOADED", "CrowdCalm")
+    plates(16)
+    ns.Core._tick(10)
+    ns.Core._tick(13.1)
+    expect(#stub.state.callLog):toBe(6)
+    stub.state.time = 13.1
+    ns.Core._handleEvent("PLAYER_ENTERING_WORLD")
+    stub.state.inCombat = true
+    stub.state.time = 15.2
+    stub.runTimers()
+    expect(#stub.state.callLog):toBe(6)
+  end)
+
   it("fires the friendly-nameplates hint once after 30s resting with no plates", function()
     login()
     expect(ns.Core._checkHint(0, 0, false)):toBe(false)
@@ -229,6 +263,56 @@ describe("Core", function()
     ns.Core._tick(25.1)
     expect(#stub.state.callLog):toBe(10)
     expect(C_CVar.GetCVar("particleDensity")):toBe("100")
+  end)
+
+  it("keeps a partially applied switch recoverable across rebuilds", function()
+    login()
+    stub.state.setCvarFail.graphicsShadowQuality = true
+    plates(16)
+    ns.Core._tick(10)
+    ns.Core._tick(13.1)
+    expect(#stub.state.callLog):toBe(4)
+    expect(_G.CrowdCalmDB.restore.sessionActive):toBe(true)
+    ns.Core.RebuildSwitch()
+    ns.Core._tick(13.5)
+    expect(#stub.state.callLog):toBe(4)
+    plates(0)
+    ns.Core._tick(20)
+    ns.Core._tick(25.1)
+    expect(#stub.state.callLog):toBe(8)
+    expect(C_CVar.GetCVar("particleDensity")):toBe("100")
+    expect(C_CVar.GetCVar("groundEffectDist")):toBe("100")
+  end)
+
+  it("tops up newly enabled categories while a crowd stays active", function()
+    login()
+    plates(16)
+    ns.Core._tick(10)
+    ns.Core._tick(13.1)
+    expect(#stub.state.callLog):toBe(5)
+    _G.CrowdCalmDB.settings.categories.spelldensity = true
+    ns.Core.RebuildSwitch()
+    ns.Core._tick(13.5)
+    expect(#stub.state.callLog):toBe(6)
+    local last = stub.state.callLog[#stub.state.callLog]
+    expect(last.name):toBe("spellVisualDensityFilterSetting")
+  end)
+
+  it("sanitizes corrupt saved settings before using them", function()
+    resetSession()
+    primeKnown()
+    _G.CrowdCalmDB = {
+      schemaVersion = 1,
+      settings = { high = "15", low = "banana", stutter = { thresholdMs = "x" } },
+    }
+    ns.Core._handleEvent("ADDON_LOADED", "CrowdCalm")
+    expect(_G.CrowdCalmDB.settings.high):toBe(15)
+    expect(_G.CrowdCalmDB.settings.low):toBe(10)
+    expect(_G.CrowdCalmDB.settings.stutter.thresholdMs):toBe(50)
+    plates(16)
+    ns.Core._tick(10)
+    ns.Core._tick(13.1)
+    expect(#stub.state.callLog):toBe(5)
   end)
 
   it("attaches a stutter OnUpdate hook when enabled and logs slow frames", function()

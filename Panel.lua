@@ -71,6 +71,23 @@ local function applyNumber(settings, key, value)
   Panel.Refresh()
 end
 
+local function setStutter(enabled)
+  local settings = currentSettings()
+  if not settings then
+    print("CrowdCalm: settings not initialized yet")
+    return
+  end
+  if type(settings.stutter) ~= "table" then
+    settings.stutter = {}
+  end
+  settings.stutter.enabled = enabled and true or false
+  local core = ns.Core
+  if core and core._syncStutterHook then
+    core._syncStutterHook()
+  end
+  print("CrowdCalm: stutter log " .. (enabled and "enabled" or "disabled"))
+end
+
 local function makeCheckbox(parent, name, label, y, initial, apply)
   local checkbox = parent:CreateCheckButton(name)
   checkbox:SetPoint("TOPLEFT", 16, -y)
@@ -113,7 +130,7 @@ function Panel.Create()
   local settings = currentSettings() or {}
 
   frame = CreateFrame("Frame", "CrowdCalmPanel", UIParent)
-  frame:SetSize(340, 420)
+  frame:SetSize(340, 460)
   frame:SetPoint("CENTER")
   frame:SetFrameStrata("DIALOG")
   frame:SetMovable(true)
@@ -154,6 +171,12 @@ function Panel.Create()
       print("CrowdCalm: " .. category.label .. (checked and " enabled" or " disabled"))
     end)
   end
+
+  y = y + 22
+  local stutterInitial = type(settings.stutter) == "table" and settings.stutter.enabled == true
+  makeCheckbox(frame, "CrowdCalmPanelStutter", "Stutter log", y, stutterInitial, function(_, checked)
+    setStutter(checked)
+  end)
 
   local sliderDefinitions = {
     { "high", "High threshold", 2, 40, settings.high or 15 },
@@ -268,8 +291,14 @@ function Panel.RunCommand(input)
     setEnabled(true)
   elseif command == "off" then
     setEnabled(false)
+  elseif command == "stutter" then
+    print("CrowdCalm: usage /cc stutter on|off")
+  elseif command:match("^stutter%s+on$") then
+    setStutter(true)
+  elseif command:match("^stutter%s+off$") then
+    setStutter(false)
   else
-    print("CrowdCalm: unknown command '" .. command .. "'. Usage: /cc [status|log|memory|on|off]")
+    print("CrowdCalm: unknown command '" .. command .. "'. Usage: /cc [status|log|memory|on|off|stutter on|off]")
   end
 end
 

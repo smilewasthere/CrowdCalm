@@ -15,7 +15,7 @@ function Stutter.new(settings)
   local self = setmetatable({}, Stutter)
   settings = settings or {}
   for key, value in pairs(DEFAULTS) do
-    if settings[key] == nil then
+    if type(settings[key]) ~= type(value) then
       self[key] = value
     else
       self[key] = settings[key]

@@ -11,6 +11,7 @@ local EVENTS = {
 }
 
 local SPELL_DENSITY_CVAR = "spellVisualDensityFilterSetting"
+local SPELL_DENSITY_RESET_VALUE = "4"
 local SPELL_DENSITY_REAPPLY_DELAY = 2
 local HINT_RESTING_SECONDS = 30
 
@@ -59,7 +60,7 @@ end
 
 local function getInfo(cvar)
   local ok, value, _, _, _, _, secure, readOnly = pcall(C_CVar.GetCVarInfo, cvar)
-  if not ok then
+  if not ok or value == nil then
     return nil
   end
   return { value = value, secure = secure == true, readOnly = readOnly == true }
@@ -147,10 +148,12 @@ function Core.RebuildSwitch()
     end,
   }
 
-  local switch = ns.Switch.new(deps, entries)
-  if oldState and oldState.mode == "crowd" then
-    switch.mode = "crowd"
-    switch.desired = "crowd"
+  local switch = ns.Switch.new(deps, entries, {
+    clobberValues = { [SPELL_DENSITY_CVAR] = SPELL_DENSITY_RESET_VALUE },
+  })
+  if oldState and (oldState.mode == "crowd" or next(oldState.applied) ~= nil) then
+    switch.mode = "normal"
+    switch.desired = "normal"
     switch.baselines = oldState.baselines
     switch.applied = oldState.applied
     switch.pendingReason = oldState.pendingReason
@@ -206,9 +209,10 @@ function Core._scheduleSpellDensityReapply()
     return
   end
   C_Timer.After(SPELL_DENSITY_REAPPLY_DELAY, function()
-    if Core.crowd and Core.crowd:GetMode() == "crowd" and Core.switch:GetState().applied[SPELL_DENSITY_CVAR] ~= nil then
-      C_CVar.SetCVar(SPELL_DENSITY_CVAR, value)
-      Core._persistState()
+    if Core.crowd and Core.crowd:GetMode() == "crowd" then
+      if Core.switch:Reapply(SPELL_DENSITY_CVAR, value) then
+        Core._persistState()
+      end
     end
   end)
 end
@@ -311,6 +315,10 @@ local function init()
     db.settings = {}
   end
   fillDefaults(db.settings)
+  local _, issues = ns.Panel.ValidateSettings(db.settings)
+  for _, issue in ipairs(issues) do
+    Core._log(issue)
+  end
   if type(db.restore) ~= "table" then
     db.restore = {}
   end

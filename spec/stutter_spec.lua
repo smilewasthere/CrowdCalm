@@ -14,6 +14,13 @@ describe("Stutter", function()
     expect(s.maxEntries):toBe(100)
   end)
 
+  it("falls back to defaults for wrongly typed settings", function()
+    local s = make({ thresholdMs = "x", enabled = "yes", maxEntries = 2 })
+    expect(s.thresholdMs):toBe(50)
+    expect(s.enabled):toBe(false)
+    expect(s.maxEntries):toBe(2)
+  end)
+
   it("logs only deltas strictly above the threshold", function()
     local s = make({ thresholdMs = 50 })
     s:SetEnabled(true, 0)

@@ -137,6 +137,90 @@ describe("Switch", function()
     expect(restored.b):toBe("9")
   end)
 
+  it("survives the client's synchronous CVAR_UPDATE echo during applies", function()
+    stub.reset()
+    primeCvars()
+    local s
+    local deps = stub.deps()
+    local setCvar = deps.setCvar
+    deps.setCvar = function(name, value)
+      local result = setCvar(name, value)
+      if result then
+        s:OnCvarChange(name, tostring(value))
+      end
+      return result
+    end
+    s = ns.Switch.new(deps, baseEntries())
+    s:Request("crowd")
+    s:TryApply()
+    local state = s:GetState()
+    expect(state.baselines.a):toBe("10")
+    expect(state.baselines.b):toBe("20")
+    s:Request("normal")
+    s:TryApply()
+    expect(C_CVar.GetCVar("a")):toBe("10")
+    expect(C_CVar.GetCVar("b")):toBe("20")
+  end)
+
+  it("re-applies an engaged cvar only through the combat and loading gates", function()
+    stub.reset()
+    primeCvars()
+    local s = newSwitch()
+    s:Request("crowd")
+    s:TryApply()
+    expect(s:Reapply("z", "9")):toBe(false)
+    expect(#stub.state.callLog):toBe(2)
+    stub.state.inCombat = true
+    expect(s:Reapply("a", "1")):toBe(false)
+    expect(#stub.state.callLog):toBe(2)
+    stub.state.inCombat = false
+    stub.state.time = 10
+    s:OnEnteringWorld()
+    stub.state.time = 11
+    expect(s:Reapply("a", "1")):toBe(false)
+    expect(#stub.state.callLog):toBe(2)
+    stub.state.time = 12.1
+    expect(s:Reapply("a", "1")):toBe(true)
+    expect(#stub.state.callLog):toBe(3)
+    expect(stub.state.callLog[3].name):toBe("a")
+  end)
+
+  it("treats the client's known reset value as a clobber, not a user edit", function()
+    stub.reset()
+    stub.state.cvars.spellVisualDensityFilterSetting = "2"
+    local entries = {
+      { cvar = "spellVisualDensityFilterSetting", value = "1", category = "spelldensity", secure = false },
+    }
+    local s = ns.Switch.new(stub.deps(), entries, { clobberValues = { spellVisualDensityFilterSetting = "4" } })
+    s:Request("crowd")
+    s:TryApply()
+    s:OnCvarChange("spellVisualDensityFilterSetting", "4")
+    expect(s:GetState().baselines.spellVisualDensityFilterSetting):toBe("2")
+    s:OnCvarChange("spellVisualDensityFilterSetting", "3")
+    expect(s:GetState().baselines.spellVisualDensityFilterSetting):toBe("3")
+    s:Request("normal")
+    s:TryApply()
+    expect(C_CVar.GetCVar("spellVisualDensityFilterSetting")):toBe("3")
+  end)
+
+  it("keeps recovery state when a persisted restore write fails", function()
+    stub.reset()
+    stub.state.cvars.a = "1"
+    stub.state.setCvarFail.a = true
+    local s = newSwitch()
+    s:RestorePersisted({ restore = { a = "10" } })
+    local state = s:GetState()
+    expect(state.applied.a):toBe("1")
+    expect(state.baselines.a):toBe("10")
+    expect(state.mode):toBe("normal")
+    expect(#stub.state.logged):toBe(1)
+    expect(stub.state.logged[1]:find("a", 1, true) ~= nil):toBe(true)
+    stub.state.setCvarFail.a = nil
+    s:TryApply()
+    expect(s:GetState().applied.a):toBeNil()
+    expect(C_CVar.GetCVar("a")):toBe("10")
+  end)
+
   it("force-restores on logout even inside the loading window", function()
     stub.reset()
     primeCvars()

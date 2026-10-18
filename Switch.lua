@@ -6,7 +6,7 @@ ns.Switch = Switch
 
 local LOADING_DEBOUNCE = 2
 
-function Switch.new(deps, entries)
+function Switch.new(deps, entries, options)
   local self = setmetatable({}, Switch)
   self.deps = deps
   self.entries = entries or {}
@@ -14,6 +14,7 @@ function Switch.new(deps, entries)
   for _, entry in ipairs(self.entries) do
     self.managed[entry.cvar] = entry
   end
+  self.clobberValues = (options and options.clobberValues) or {}
   self.mode = "normal"
   self.desired = "normal"
   self.pendingReason = nil
@@ -21,6 +22,7 @@ function Switch.new(deps, entries)
   self.applied = {}
   self.lastWrite = {}
   self.loadingUntil = nil
+  self.applying = false
   return self
 end
 
@@ -50,6 +52,7 @@ end
 
 local function applyCrowd(self)
   local failed = false
+  self.applying = true
   for _, entry in ipairs(self.entries) do
     if self.applied[entry.cvar] == nil then
       local baseline = self.deps.getCvar(entry.cvar)
@@ -64,6 +67,7 @@ local function applyCrowd(self)
       end
     end
   end
+  self.applying = false
   if failed then
     return false
   end
@@ -73,6 +77,7 @@ end
 
 local function applyNormal(self)
   local failed = false
+  self.applying = true
   for cvar in pairs(self.applied) do
     local baseline = self.baselines[cvar]
     if self.deps.setCvar(cvar, baseline) then
@@ -83,6 +88,7 @@ local function applyNormal(self)
       failed = true
     end
   end
+  self.applying = false
   if failed then
     return false
   end
@@ -137,13 +143,32 @@ function Switch:OnEnteringWorld()
 end
 
 function Switch:OnCvarChange(name, value)
-  if not self.managed[name] then
+  if self.applying or not self.managed[name] then
     return
   end
   if self.lastWrite[name] == value then
     return
   end
+  if self.applied[name] ~= nil and self.clobberValues[name] == value then
+    return
+  end
   self.baselines[name] = value
+end
+
+function Switch:Reapply(cvar, value)
+  if self.mode ~= "crowd" or self.applied[cvar] == nil then
+    return false
+  end
+  if blockedReason(self) then
+    return false
+  end
+  self.applying = true
+  local ok = self.deps.setCvar(cvar, value) and true or false
+  self.applying = false
+  if ok then
+    self.lastWrite[cvar] = value
+  end
+  return ok
 end
 
 function Switch:OnLogout()
@@ -154,11 +179,18 @@ end
 
 function Switch:RestorePersisted(plan)
   plan = plan or {}
+  local failed = {}
+  self.applying = true
   for cvar, value in pairs(plan.restore or {}) do
     if self.deps.setCvar(cvar, value) then
       self.lastWrite[cvar] = value
+    else
+      failed[cvar] = self.deps.getCvar(cvar)
+      self.baselines[cvar] = value
+      self.deps.log("restore of '" .. cvar .. "' failed; keeping recovery data")
     end
   end
+  self.applying = false
   for cvar, value in pairs(plan.adopt or {}) do
     self.baselines[cvar] = value
   end
@@ -166,7 +198,7 @@ function Switch:RestorePersisted(plan)
     self.baselines[cvar] = nil
     self.lastWrite[cvar] = nil
   end
-  self.applied = {}
+  self.applied = failed
   self.mode = "normal"
   self.desired = "normal"
   self.pendingReason = nil

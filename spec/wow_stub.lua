@@ -175,6 +175,7 @@ function stub.reset()
     logged = {},
     gcKB = 1024,
     hasGetAllCommands = true,
+    getInfoNilMode = false,
   }
 end
 
@@ -195,6 +196,18 @@ function stub.known(name, value, opts)
   end
 end
 
+function stub.fireEvent(event, ...)
+  local frames = {}
+  for i, frame in ipairs(stub.state.frames) do
+    frames[i] = frame
+  end
+  for _, frame in ipairs(frames) do
+    if frame.__events[event] and frame.__scripts.OnEvent then
+      frame.__scripts.OnEvent(frame, event, ...)
+    end
+  end
+end
+
 local function setCvarImpl(name, value)
   if stub.state.setCvarFail[name] then
     stub.state.failedSets = stub.state.failedSets + 1
@@ -202,11 +215,15 @@ local function setCvarImpl(name, value)
   end
   stub.state.cvars[name] = tostring(value)
   stub.state.callLog[#stub.state.callLog + 1] = { name = name, value = tostring(value) }
+  stub.fireEvent("CVAR_UPDATE", name, tostring(value))
   return true
 end
 
 local function getInfoImpl(name)
   if not stub.state.knownCvars[name] then
+    if stub.state.getInfoNilMode then
+      return nil
+    end
     error("Unknown console variable: " .. tostring(name), 0)
   end
   local value = stub.state.cvars[name]

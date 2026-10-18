@@ -104,7 +104,10 @@ debounce.
 
 - **Spell density** only has an effect in instanced content, and the client
   resets it after loading screens; when enabled, CrowdCalm re-applies it
-  2 s after `PLAYER_ENTERING_WORLD` while a crowd is still active.
+  2 s after `PLAYER_ENTERING_WORLD` while a crowd is still active. If you
+  manually set spell density to "4" (Full) while a crowd profile is active,
+  CrowdCalm treats that value as the client's own reset (not your edit) and
+  still restores your pre-crowd value later; pick 1–3 to override it.
 - **Target FPS** is experimental: the cvar is found by name at runtime and
   the category is skipped with a log line when the client does not have it.
 - The panel shows stored settings; cvars you change manually in the game
