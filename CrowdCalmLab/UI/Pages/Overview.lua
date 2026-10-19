@@ -11,6 +11,14 @@ local Lfmt = ns.Lfmt
 local function heroCard(parent, width, titleKey)
   local card = Widgets.Panel(parent, { base = ns.palette.raised, borderAlpha = 0.6, vignette = true, vignetteAlpha = 0.25 })
   card:SetSize(width, 120)
+  -- pre.6: gold accent strip along the top edge (accent.tga fades right)
+  local accent = card:CreateTexture(nil, "ARTWORK")
+  accent:SetTexture(Skin.mediaPath .. "accent.tga")
+  accent:SetPoint("TOPLEFT", card, "TOPLEFT", 0, 0)
+  accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, 0)
+  accent:SetHeight(3)
+  local gold = ns.palette.gold
+  accent:SetVertexColor(gold.r, gold.g, gold.b, 0.95)
   local title = Widgets.Text(card, "small", L(titleKey))
   title:SetPoint("TOPLEFT", 12, -10)
   Skin.ColorText(title, ns.palette.textDim)
@@ -61,6 +69,17 @@ local function create(parent)
   Skin.ColorText(pLab, ns.palette.textDim)
   local zoneText = Widgets.Text(crowdCard, "small", "")
   zoneText:SetPoint("TOP", crowdCard.title, "BOTTOM", 0, -6)
+  -- pre.6: pivot pip at the arc's baseline center + a crowd word readout
+  -- inside the dome, tinted with the active ramp color
+  local pip = crowdCard:CreateTexture(nil, "ARTWORK")
+  pip:SetTexture(Skin.mediaPath .. "gauge_pip.tga")
+  pip:SetSize(10, 10)
+  pip:SetPoint("CENTER", gauge, "BOTTOM", 0, 0)
+  local readout = Widgets.Text(crowdCard, "header", "")
+  readout:SetPoint("BOTTOM", gauge, "BOTTOM", 0, 7)
+  readout:SetJustifyH("CENTER")
+  crowdCard.readout = readout
+  crowdCard.pip = pip
   local whyBtn = Widgets.Button(crowdCard, {
     label = L("crowd_why"),
     small = true,
@@ -105,10 +124,35 @@ local function create(parent)
 
   local topTitle = Widgets.Text(frame, "small", L("last_run_top3"))
   topTitle:SetPoint("TOPLEFT", spark, "BOTTOMLEFT", 0, -16)
-  local topLines = {}
+  -- pre.6: each last-run row is label | proportional gain bar | value
+  local rowW = math.floor(parent:GetWidth() - pad * 2 - 8)
+  local labelW = math.floor(rowW * 0.5)
+  local valueW = 90
+  local topRows = {}
   for i = 1, 3 do
-    topLines[i] = Widgets.Text(frame, "body", "")
-    topLines[i]:SetPoint("TOPLEFT", topTitle, "BOTTOMLEFT", 8, -6 - (i - 1) * 18)
+    local row = CreateFrame("Frame", nil, frame)
+    row:SetHeight(16)
+    row:SetWidth(rowW)
+    row:SetPoint("TOPLEFT", topTitle, "BOTTOMLEFT", 8, -6 - (i - 1) * 22)
+    local label = Widgets.Text(row, "body", "")
+    label:SetPoint("LEFT", row, "LEFT", 0, 0)
+    label:SetWidth(labelW)
+    label:SetWordWrap(false)
+    local value = Widgets.Text(row, "body", "")
+    value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    value:SetWidth(valueW)
+    value:SetJustifyH("RIGHT")
+    local track = row:CreateTexture(nil, "ARTWORK")
+    track:SetTexture(Skin.mediaPath .. "bar_track.tga")
+    track:SetPoint("TOPLEFT", row, "TOPLEFT", labelW + 10, -4)
+    track:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -(valueW + 10), 4)
+    local fill = row:CreateTexture(nil, "OVERLAY")
+    fill:SetTexture(Skin.mediaPath .. "bar_fill.tga")
+    fill:SetPoint("LEFT", track, "LEFT", 0, 0)
+    fill:SetPoint("TOP", track, "TOP", 0, 0)
+    fill:SetPoint("BOTTOM", track, "BOTTOM", 0, 0)
+    fill:SetWidth(1)
+    topRows[i] = { row = row, label = label, value = value, track = track, fill = fill }
   end
 
   local CROWD_VALUES = { quiet = 0.25, busy = 0.6, packed = 0.95 }
@@ -116,18 +160,25 @@ local function create(parent)
 
   local function refresh()
     local live = ns.meter.live
-    Widgets.CountUp(fpsCard.big, prev.fps, live.fps, 400, "%.0f")
+    Widgets.CountUp(fpsCard.big, prev.fps, live.fps, 400, "%.0f FPS")
     prev.fps = live.fps
     l50:SetText(L("low50") .. ": " .. string.format("%.1f", live.d50pm))
     l100:SetText(L("low100") .. ": " .. string.format("%.1f", live.d100pm))
-    Widgets.CountUp(frameCard.big, prev.frameMs, live.frameMs, 400, "%.1f")
+    Widgets.CountUp(frameCard.big, prev.frameMs, live.frameMs, 400, "%.1f ms")
     prev.frameMs = live.frameMs
     local snap = ns.stats.Snapshot()
     lms:SetText(L("frame_ms") .. ": " .. string.format("%.1f", live.frameMs))
     lp5:SetText(L("p5_label") .. ": " .. string.format("%.0f", snap.p5))
     ns.context.Update()
     local label = ns.context.Label()
-    gauge:SetValue(CROWD_VALUES[label] or 0.25)
+    local rv = CROWD_VALUES[label] or 0.25
+    gauge:SetValue(rv)
+    -- pre.6: readout word + pip share the gauge's active ramp color
+    local rc = rv < 0.425 and ns.palette.gainColor()
+      or (rv < 0.775 and ns.palette.gold or ns.palette.costColor())
+    readout:SetText(L("crowd_" .. label) or label)
+    Skin.ColorText(readout, rc)
+    pip:SetVertexColor(rc.r, rc.g, rc.b, 1)
     local zone = ns.context.Zone()
     local sub = ns.context.SubZone()
     if sub ~= "" then
@@ -137,27 +188,48 @@ local function create(parent)
     Skin.ColorText(zoneText, ns.palette.textDim)
 
     local run = ns.db.results and ns.db.results[#ns.db.results]
-    for i = 1, 3 do
-      local text = ""
-      if run and run.rows then
-        local sorted = {}
-        for _, row in ipairs(run.rows) do
-          if not row.notTestable and row.gain then
-            sorted[#sorted + 1] = row
-          end
-        end
-        table.sort(sorted, function(a, b)
-          return a.gain > b.gain
-        end)
-        local row = sorted[i]
-        if row then
-          text = string.format("%s  %+.1f FPS", L(row.labelKey or row.key or "?"), row.gain)
+    local sorted = {}
+    if run and run.rows then
+      for _, row in ipairs(run.rows) do
+        if not row.notTestable and row.gain then
+          sorted[#sorted + 1] = row
         end
       end
-      topLines[i]:SetText(text)
+      table.sort(sorted, function(a, b)
+        return a.gain > b.gain
+      end)
     end
-    if not run then
-      topLines[1]:SetText(L("no_runs"))
+    local maxAbs = 0.01
+    for _, r in ipairs(sorted) do
+      local ag = math.abs(r.gain)
+      if ag > maxAbs then
+        maxAbs = ag
+      end
+    end
+    for i = 1, 3 do
+      local tr = topRows[i]
+      local row = sorted[i]
+      if not run then
+        tr.label:SetText(i == 1 and L("no_runs") or "")
+        tr.value:SetText("")
+        tr.track:Hide()
+        tr.fill:Hide()
+      elseif row then
+        local name = L(row.labelKey or row.key or "?")
+        tr.label:SetText(name)
+        tr.value:SetFormattedText("%+.1f FPS", row.gain)
+        tr.track:Show()
+        tr.fill:Show()
+        local ratio = math.min(1, math.abs(row.gain) / maxAbs)
+        tr.fill:SetWidth(math.max(2, math.floor(tr.track:GetWidth() * ratio)))
+        local c = row.gain >= 0 and ns.palette.gainColor() or ns.palette.costColor()
+        tr.fill:SetVertexColor(c.r, c.g, c.b, 0.95)
+      else
+        tr.label:SetText("")
+        tr.value:SetText("")
+        tr.track:Hide()
+        tr.fill:Hide()
+      end
     end
   end
 

@@ -94,6 +94,12 @@ const MEDIA_MANIFEST = [
   "gauge_q.tga",
   "gauge_b.tga",
   "gauge_p.tga",
+  // pre.6 visual pass
+  "accent.tga",
+  "spark_bar.tga",
+  "bar_fill.tga",
+  "bar_track.tga",
+  "gauge_pip.tga",
 ];
 const MEDIA_MAX_BYTES = 1024 * 1024; // 1 MB total budget
 

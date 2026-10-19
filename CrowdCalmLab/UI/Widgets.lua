@@ -499,6 +499,9 @@ end
 
 local sparkSeq = 0
 
+-- pre.6 sparkline v2: bars draw from a generated vertical gradient
+-- (spark_bar.tga, tinted at runtime), two hairline grid lines sit under
+-- the data, and spike markers are tinted once at creation.
 function Widgets.Sparkline(parent, width, height, barCount)
   sparkSeq = sparkSeq + 1
   local key = "sparkline-" .. sparkSeq
@@ -510,6 +513,7 @@ function Widgets.Sparkline(parent, width, height, barCount)
   local barW = width / n
   for i = 1, n do
     local bar = frame:CreateTexture(nil, "ARTWORK")
+    bar:SetTexture(ns.skin.mediaPath .. "spark_bar.tga")
     bar:SetWidth(math.max(1, barW - 1))
     bar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", (i - 1) * barW, 0)
     bar:SetHeight(1)
@@ -519,12 +523,23 @@ function Widgets.Sparkline(parent, width, height, barCount)
     spike:SetWidth(math.max(1, barW - 1))
     spike:SetHeight(3)
     spike:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", (i - 1) * barW, height - 3)
+    local danger = ns.palette.danger
+    spike:SetColorTexture(danger.r, danger.g, danger.b, 1)
     spike:Hide()
     spikes[i] = spike
   end
   local bg = frame:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
   bg:SetColorTexture(ns.palette.obsidian.r, ns.palette.obsidian.g, ns.palette.obsidian.b, 0.6)
+  local line = ns.palette.line
+  for g = 1, 2 do
+    local grid = frame:CreateTexture(nil, "BACKGROUND")
+    grid:SetColorTexture(line.r, line.g, line.b, 0.3)
+    grid:SetPoint("LEFT")
+    grid:SetPoint("RIGHT")
+    grid:SetHeight(1)
+    grid:SetPoint("TOP", frame, "TOP", 0, -math.floor(height * g / 3))
+  end
 
   function frame:Update()
     local history = ns.meter.history
@@ -553,7 +568,7 @@ function Widgets.Sparkline(parent, width, height, barCount)
         local v = history:Get(histIndex) or 0
         bars[i]:Show()
         bars[i]:SetHeight(math.max(1, (v / maxFps) * (height - 4)))
-        bars[i]:SetColorTexture(gain.r, gain.g, gain.b, 0.55)
+        bars[i]:SetVertexColor(gain.r, gain.g, gain.b, 0.8)
         if spikeRing:Get(histIndex) == 1 then
           spikes[i]:Show()
         else
@@ -563,10 +578,6 @@ function Widgets.Sparkline(parent, width, height, barCount)
         bars[i]:Hide()
         spikes[i]:Hide()
       end
-    end
-    local danger = ns.palette.danger
-    for i = 1, n do
-      spikes[i]:SetColorTexture(danger.r, danger.g, danger.b, 1)
     end
   end
 

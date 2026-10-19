@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to CrowdCalm Lab are documented here.
 
@@ -19,6 +19,42 @@ All notable changes to CrowdCalm Lab are documented here.
   `scripts/check-lua.js` (static syntax/TOC gate).
 - Docs: `docs/VERIFY.md`, `docs/FIRST-RUN-CHECKLIST.md`, `docs/DESIGN.md`.
 
+## 1.0.0-pre.6 (2026-10-19)
+
+Visual pass for the two pages the owner called out ("Lab not pretty",
+"Overview not good-looking"). Behavior is unchanged; only art, layout
+and readouts.
+
+### Added
+
+- **Overview hero cards:** gold accent strip along each top edge; big
+  values now carry units ("60 FPS", "16.7 ms"); the crowd gauge gained a
+  pivot pip at the arc's baseline and a centered Quiet/Busy/Packed
+  readout inside the dome, both tinted with the active ramp color
+  (green/gold/red, colorblind-safe).
+- **Overview best-from-last-run:** each row is now name | proportional
+  gain bar (track + gradient fill) | "+X.X FPS"; bar length tracks the
+  top gain, green for positive, red for negative; empty state unchanged.
+- **Lab tiles:** selected tiles wear a gold top accent, kept in sync
+  across the whole grid (including after "Test only"); tiles now sit two
+  per row and the wheel scrolls whole rows.
+- **Lab controls:** a visible strip wraps the bottom control area
+  (combine toggle top-left; estimate + modes + Run bottom-right), and
+  Quick/Thorough are joined into one segmented backing strip with no gap
+  (active side keeps the gold face, 1 px overlap reads as one divider).
+- **Lab run overlay:** soft glow behind the phase ring tinted per phase
+  (dim while settling/warming, gold while measuring), seconds remaining
+  counted down inside the ring, headline colored by phase.
+
+### Changed
+
+- **Sparkline v2:** bars draw from a generated vertical gradient
+  (brighter at the baseline, tinted green) instead of a flat color, two
+  hairline grid lines sit behind the data, and spike markers are tinted
+  once at creation instead of every tick.
+- 5 new generated textures (accent, spark_bar, bar_fill, bar_track,
+  gauge_pip); media manifest now 27 files / 853,156 bytes of the 1 MB
+  budget.
 ## 1.0.0-pre.5 (2026-10-19)
 
 ### Fixed
@@ -45,7 +81,7 @@ All notable changes to CrowdCalm Lab are documented here.
   "Setting applied". EditBoxes (Addons search, report box, About URL)
   follow the font-size preference too, via `Widgets.ApplyEditBoxFont`.
 - **UI scale resets while dragging (owner report #2):** sliders apply on
-  release instead of mid-drag — resizing the window under the cursor
+  release instead of mid-drag â€” resizing the window under the cursor
   used to yank the thumb to a wrong value before mouse-up. Keyboard
   changes commit after a 0.35 s debounce, the value text formats
   properly ("110%", "14"), and Settings re-syncs sliders silently on
@@ -56,10 +92,10 @@ All notable changes to CrowdCalm Lab are documented here.
 - **UI sounds and a working mute (owner request):** new `Core/Sound.lua`
   with click / toggle / done / error sounds (SOUNDKIT names with classic
   SoundKit IDs as fallback). Buttons, checkboxes and dropdowns play
-  through it, and "Mute UI sounds" finally gates every playback —
+  through it, and "Mute UI sounds" finally gates every playback â€”
   unmuting confirms with one last click.
 - **Header FPS panel (owner report #7):** the bare top-right number is
-  now a chip — status dot, colored number, dim "FPS" label, tooltip, and
+  now a chip â€” status dot, colored number, dim "FPS" label, tooltip, and
   a click through to the Overview page. The client chip moved left and
   sizes itself to its text.
 - **Minimap icon like before (owner report #6):** icon inset restored to
@@ -68,8 +104,8 @@ All notable changes to CrowdCalm Lab are documented here.
 - **Measurement stability engine v2 (owner spec):** every phase is now
   [apply or restore] -> 6 s settle -> 4 s warm-up (dropped by the new
   `Stats.Begin(ignoreSeconds)` window) -> measured sample (the slider's
-  seconds). Quick runs A-B-A; Thorough runs A-B-A-B-A-B-A — 7 phases,
-  4 shared baselines — and each test is compared against the average of
+  seconds). Quick runs A-B-A; Thorough runs A-B-A-B-A-B-A â€” 7 phases,
+  4 shared baselines â€” and each test is compared against the average of
   its two neighbouring baselines, reported as the median gain plus the
   min..max spread. Baselines drifting more than 8% now flag the row
   "Not reliable", and the card shows the actual difference plus a rerun
@@ -79,7 +115,7 @@ All notable changes to CrowdCalm Lab are documented here.
   than 2.5 s or turns more than 120 degrees during a run. Once per run a
   banner warns; cards show a marker; the report gets a WARNING line.
 - **Caps preflight, read-only:** before each run the lab reads Max FPS
-  (`maxfps`, falling back to `renderFrameRateCap`) and `gxVSync` — it
+  (`maxfps`, falling back to `renderFrameRateCap`) and `gxVSync` â€” it
   never writes them. A cap shows a banner, a persistent overlay line,
   and a `Caps:` line in the report.
 - **Lab overlay:** keep-still advisory line ("Don't move, turn the
@@ -89,7 +125,7 @@ All notable changes to CrowdCalm Lab are documented here.
 - **Results cards and report:** FPS triple (entry baseline -> mean test
   -> exit baseline), values triple (from -> to -> read back after the
   final restore), per-test gains and spread for Thorough, the baseline
-  difference percent, and movement flags — on the cards and in the Copy
+  difference percent, and movement flags â€” on the cards and in the Copy
   report.
 
 ### Changed
@@ -138,7 +174,7 @@ All notable changes to CrowdCalm Lab are documented here.
 - **Results "What to do here" panel:** the lab now stores the tested values
   (from -> to) on every result row and turns them into a ranked
   recommendation: the best "Worth it" row gets a full sentence
-  ("set X to Y — about +N FPS here"), other wins are listed together,
+  ("set X to Y â€” about +N FPS here"), other wins are listed together,
   and every card carries a short explanation of what the setting does.
   Noisy runs get a "re-run in Thorough mode" instruction instead of a
   false recommendation.
@@ -173,7 +209,7 @@ All notable changes to CrowdCalm Lab are documented here.
 - **Addons page empty until "Refresh CPU"** (owner screenshot): the
   auto-scan on first show was silently blocked in combat; the page now
   retries automatically when combat ends, and the sort label shows the
-  addon count ("N addons · sorted by CPU").
+  addon count ("N addons Â· sorted by CPU").
 - **Empty-state icon overlapped page text** (owner screenshot: the gold
   "C" disc sitting on the Addons caveat): the empty-state icon is now
   smaller (32px) and centered in the page.
@@ -186,11 +222,11 @@ All notable changes to CrowdCalm Lab are documented here.
 
 - **Empty window on open (owner report on pre.1):** `ns.L` was a plain
   table, so every `L("key")` call raised "attempt to call a table value"
-  at file scope — all seven pages failed to register and the window came
+  at file scope â€” all seven pages failed to register and the window came
   up with a header only. `Core/Locale.lua` now defines `__call` alongside
   `__index`, supporting both call styles used across the codebase.
 - `Util.CreateFramePool` passed the parent frame in the `CreateFrame`
-  name slot (broke every pooled row list — Stutter and Addons pages);
+  name slot (broke every pooled row list â€” Stutter and Addons pages);
   the Lab progress ring passed the frame in the name slot of its Cooldown
   (silently fell back to a bar every time).
 - **Error surface:** a failed window build now discards the partial
@@ -203,7 +239,7 @@ All notable changes to CrowdCalm Lab are documented here.
 
 - **Minimap button** (owner request): 32px logo disc with a 12-segment
   arc bezel and hover glow, left-click toggles the window, drag orbits
-  it around the minimap rim (position persisted). Settings → "Show
+  it around the minimap rim (position persisted). Settings â†’ "Show
   minimap button" (default on) hides and shows it.
 - **Gate hardening:** `scripts/check-lua.js` now fails if `Locale.lua`
   lacks `__call` (the root-cause class) and warns when a literal

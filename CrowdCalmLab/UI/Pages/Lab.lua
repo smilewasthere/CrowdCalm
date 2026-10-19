@@ -19,6 +19,17 @@ local function tileFor(parent, cand, onSelectionChanged)
   local card = Widgets.Panel(parent, { base = ns.palette.raised, borderAlpha = 0.5 })
   card:SetHeight(72)
   local locked = cand.locked and true or false
+  -- pre.6: selected tiles wear a gold top accent (accent.tga, fades right);
+  -- the selection refresh below keeps it in sync after "Test only" too
+  local accent = card:CreateTexture(nil, "ARTWORK")
+  accent:SetTexture(Skin.mediaPath .. "accent.tga")
+  accent:SetPoint("TOPLEFT", card, "TOPLEFT", 0, 0)
+  accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, 0)
+  accent:SetHeight(3)
+  local gold = ns.palette.gold
+  accent:SetVertexColor(gold.r, gold.g, gold.b, 0.95)
+  accent:SetShown(not locked and ns.db.selection[cand.id] and true or false)
+  card.accent = accent
 
   local box
   if not locked then
@@ -26,12 +37,14 @@ local function tileFor(parent, cand, onSelectionChanged)
       checked = ns.db.selection[cand.id] and true or false,
       onToggle = function(checked)
         ns.db.selection[cand.id] = checked
+        accent:SetShown(checked)
         if onSelectionChanged then
           onSelectionChanged()
         end
       end,
     })
     box:SetPoint("TOPLEFT", 8, -8)
+    card.box = box
   else
     local lockIcon = card:CreateTexture(nil, "ARTWORK")
     lockIcon:SetTexture(Skin.mediaPath .. "icon.tga")
@@ -149,12 +162,30 @@ local function create(parent)
   local refreshRunButton -- forward-declared; defined below the controls
   local refreshOverlay -- forward-declared so Run/Cancel can refresh instantly
   local tileCache = {} -- cand.id -> tile (bounded pool; review I9)
+  local COLS = 2 -- pre.6: two tiles per row
+
+  -- pre.6: one refresh keeps every checkbox and accent strip truthful after
+  -- any programmatic selection change ("Test only" flips the whole grid)
+  local function syncTileVisuals()
+    for id, tile in pairs(tileCache) do
+      local sel = ns.db.selection[id] and true or false
+      if tile.box then
+        tile.box:SetChecked(sel)
+      end
+      if tile.accent then
+        tile.accent:SetShown(sel)
+      end
+    end
+  end
 
   local function rebuildTiles()
     for _, t in pairs(tileCache) do
       t:Hide()
     end
-    local visible = math.floor(grid:GetHeight() / (TILE_H + TILE_GAP))
+    local gapX = 8
+    local tileW = math.floor((grid:GetWidth() - gapX * (COLS - 1)) / COLS)
+    local rows = math.floor(grid:GetHeight() / (TILE_H + TILE_GAP))
+    local visible = rows * COLS
     local n = #allCandidates
     local maxOffset = math.max(0, n - visible)
     if offset > maxOffset then
@@ -166,6 +197,7 @@ local function create(parent)
       local tile = tileCache[cand.id]
       if not tile then
         tile = tileFor(grid, cand, function()
+          syncTileVisuals()
           if refreshRunButton then
             refreshRunButton()
           end
@@ -176,8 +208,17 @@ local function create(parent)
         local v = ns.cvarGuard.Read(tile.candKey)
         tile.valueText:SetText(Lfmt("current_value", tostring(v or "?")))
       end
-      tile:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, -((i - 1) * (TILE_H + TILE_GAP)))
-      tile:SetPoint("TOPRIGHT", grid, "TOPRIGHT", 0, -((i - 1) * (TILE_H + TILE_GAP)))
+      local col = (i - 1) % COLS
+      local rowi = math.floor((i - 1) / COLS)
+      tile:ClearAllPoints()
+      tile:SetPoint(
+        "TOPLEFT",
+        grid,
+        "TOPLEFT",
+        col * (tileW + gapX),
+        -(rowi * (TILE_H + TILE_GAP))
+      )
+      tile:SetWidth(tileW)
       tile:SetHeight(TILE_H)
       tile:Show()
       tileFrames[#tileFrames + 1] = tile
@@ -185,18 +226,20 @@ local function create(parent)
   end
 
   grid:SetScript("OnMouseWheel", function(_, delta)
-    offset = math.max(0, offset - delta)
+    -- pre.6: whole rows at a time (two tiles per notch)
+    offset = math.max(0, offset - delta * COLS)
     rebuildTiles()
   end)
 
-  -- bottom controls: combine toggle on the top row, everything else as one
-  -- right-aligned chain [est] [Quick] [Thorough] [Run Lab] on the bottom
-  -- row. Before pre.3 the mode buttons and Run button overlapped (owner
-  -- screenshot: Thorough drawn through Run Lab).
+  -- bottom controls: pre.6 wraps the whole area in a visible strip —
+  -- combine toggle on the top row (left), estimate + joined Quick/
+  -- Thorough segmented control + Run on the bottom row (right).
   local controls = CreateFrame("Frame", nil, frame)
   controls:SetHeight(72)
   controls:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", pad, pad)
   controls:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, pad)
+  local controlsBg = Widgets.Panel(controls, { base = ns.palette.obsidian, borderAlpha = 0.45 })
+  controlsBg:SetAllPoints(controls)
 
   local combineBox = Widgets.Checkbox(controls, {
     label = L("combine_top"),
@@ -206,7 +249,7 @@ local function create(parent)
       refreshRunButton()
     end,
   })
-  combineBox:SetPoint("TOPLEFT", controls, "TOPLEFT", 0, -4)
+  combineBox:SetPoint("TOPLEFT", controls, "TOPLEFT", 8, -4)
 
   local estText = Widgets.Text(controls, "small", "")
   Skin.ColorText(estText, ns.palette.textDim)
@@ -216,29 +259,11 @@ local function create(parent)
   local function applyMode()
     ns.db.settings.lab.defaultMode = mode
     -- segmented look (pre.4): active mode wears the gold face, inactive
-    -- stays on the dark gradient
+    -- stays on the dark gradient; pre.6 both sit in one joined strip
     Skin.SetButtonPrimary(quickBtn, mode == "quick")
     Skin.SetButtonPrimary(thoroughBtn, mode == "thorough")
     refreshRunButton()
   end
-  quickBtn = Widgets.Button(controls, {
-    small = true,
-    label = L("quick"),
-    onClick = function()
-      mode = "quick"
-      applyMode()
-    end,
-  })
-  quickBtn:SetWidth(80)
-  thoroughBtn = Widgets.Button(controls, {
-    small = true,
-    label = L("thorough"),
-    onClick = function()
-      mode = "thorough"
-      applyMode()
-    end,
-  })
-  thoroughBtn:SetWidth(130)
 
   local runBtn = Widgets.Button(controls, {
     label = L("run_lab"),
@@ -263,10 +288,36 @@ local function create(parent)
     end,
   })
   runBtn:SetWidth(160)
-  runBtn:SetPoint("RIGHT", controls, "RIGHT", 0, -10)
-  thoroughBtn:SetPoint("RIGHT", runBtn, "LEFT", -6, 0)
-  quickBtn:SetPoint("RIGHT", thoroughBtn, "LEFT", -6, 0)
-  estText:SetPoint("RIGHT", quickBtn, "LEFT", -10, 0)
+  runBtn:SetPoint("RIGHT", controls, "RIGHT", -8, -10)
+
+  -- joined segmented control: one backing strip, no gap; the buttons
+  -- overlap by 1 px so their 1 px edges read as a single divider
+  local modeStrip = Widgets.Panel(controls, { base = ns.palette.obsidian, borderAlpha = 0.5 })
+  modeStrip:SetSize(80 + 130 - 1, 30)
+  modeStrip:SetPoint("RIGHT", runBtn, "LEFT", -12, 0)
+
+  quickBtn = Widgets.Button(modeStrip, {
+    small = true,
+    label = L("quick"),
+    onClick = function()
+      mode = "quick"
+      applyMode()
+    end,
+  })
+  quickBtn:SetSize(80, 28)
+  quickBtn:SetPoint("TOPLEFT", modeStrip, "TOPLEFT", 0, -1)
+  thoroughBtn = Widgets.Button(modeStrip, {
+    small = true,
+    label = L("thorough"),
+    onClick = function()
+      mode = "thorough"
+      applyMode()
+    end,
+  })
+  thoroughBtn:SetSize(130, 28)
+  thoroughBtn:SetPoint("TOPLEFT", quickBtn, "TOPRIGHT", -1, 0)
+
+  estText:SetPoint("RIGHT", modeStrip, "LEFT", -12, 0)
 
   function refreshRunButton()
     local count = 0
@@ -290,8 +341,19 @@ local function create(parent)
   overlay:EnableMouse(true)
   Skin.ApplyPanel(overlay, { base = ns.palette.obsidian, alpha = 0.96, vignette = true })
   overlay:Hide()
+  -- pre.6: soft glow behind the ring (created first, so the ring draws
+  -- over it); tint follows the active phase in refreshOverlay
+  local ringGlow = overlay:CreateTexture(nil, "ARTWORK")
+  ringGlow:SetTexture(Skin.mediaPath .. "glow.tga")
+  ringGlow:SetSize(170, 170)
+  ringGlow:SetPoint("TOP", overlay, "TOP", 0, -7) -- center lands on the ring
+  local gold = ns.palette.gold
+  ringGlow:SetVertexColor(gold.r, gold.g, gold.b, 0.16)
   local ring = Widgets.Ring(overlay, 64)
   ring:SetPoint("TOP", overlay, "TOP", 0, -60)
+  local countdown = Widgets.Text(overlay, "number", "")
+  countdown:SetPoint("CENTER", ring, "CENTER", 0, 0)
+  countdown:SetJustifyH("CENTER")
   local phaseText = Widgets.Text(overlay, "header", "")
   phaseText:SetPoint("TOP", ring, "BOTTOM", 0, -12)
   local stepText = Widgets.Text(overlay, "body", "")
@@ -338,6 +400,14 @@ local function create(parent)
     applying = "phase_applying",
     restoring = "phase_restoring",
   }
+  -- pre.6: headline + glow color per phase (measuring = gold, waiting = dim)
+  local PHASE_TINT = {
+    sample = ns.palette.goldBright,
+    settle = ns.palette.textDim,
+    warmup = ns.palette.textDim,
+    applying = ns.palette.gold,
+    restoring = ns.palette.gold,
+  }
   local lastRunId = ns.db.lastRunId or 0
   local lastCompleted = ns.lab.completedAt
   local lastPhase = nil
@@ -348,6 +418,7 @@ local function create(parent)
     overlay:SetShown(running)
     if not running then
       lastPhase = nil
+      countdown:SetText("")
       return
     end
     local p = ns.lab.Progress()
@@ -379,6 +450,9 @@ local function create(parent)
     end
     if p.phase ~= lastPhase then
       lastPhase = p.phase
+      local tint = PHASE_TINT[p.phase] or ns.palette.gold
+      Skin.ColorText(phaseText, tint)
+      ringGlow:SetVertexColor(tint.r, tint.g, tint.b, 0.18)
       local lab = ns.db.settings.lab
       if p.phase == "sample" then
         ring:Start(lab.sampleSeconds or 8)
@@ -391,6 +465,16 @@ local function create(parent)
       end
     end
     ring:UpdateFallback()
+    -- pre.6: seconds remaining inside the ring (1 Hz refresh)
+    if ring.duration and ring.startedAt then
+      local left = ring.duration - (GetTime() - ring.startedAt)
+      if left < 0 then
+        left = 0
+      end
+      countdown:SetFormattedText("%d", math.ceil(left))
+    else
+      countdown:SetText("")
+    end
   end
 
   local function refreshGuide()

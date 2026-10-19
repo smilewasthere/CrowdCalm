@@ -165,6 +165,20 @@ intentional globals are:
    each run and never written; `GetUnitSpeed` / `GetPlayerFacing` are
    probed once at load and degrade to warn-only FPS sampling when absent.
    Verified by inspection: LabRunner contains no `SetCVar` for those keys.
+18. **One accent gradient serves both orientations (pre.6).** The tile
+   selection accent is a top strip, identical in orientation to the hero
+   card accents, so a single horizontal `accent.tga` covers both. A left
+   edge strip would have needed a rotated twin (SetTexCoord permutation)
+   for no visual gain.
+19. **Top-3 rows are page-local, not a widget (pre.6).** The
+   label | bar | value row exists only on Overview, so the layout lives
+   in Overview.lua; Widgets only gained the sparkline's gradient bars
+   and grid lines (also single-consumer, but they replace existing
+   widget behavior rather than adding an API).
+20. **Overlay countdown reuses the Ring clock (pre.6).** `Widgets.Ring`
+   already stores `duration`/`startedAt` for its fallback bar; the
+   centered countdown reads those fields at the 1 Hz refresh instead of
+   owning a second timer, so the number and the ring can never disagree.
 ## Testing philosophy
 
 Nothing in this repository has run inside WoW yet, by design (the owner

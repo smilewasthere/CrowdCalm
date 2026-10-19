@@ -200,6 +200,85 @@ def make_gauges() -> None:
     save(_gauge_band(0.95), "gauge_p.tga")
 
 
+# ------------------------------------------------ pre.6 visual pass ----------
+
+
+def make_accent() -> None:
+    """Horizontal accent strip (64x16): opaque at the left, fading to the
+    right. White RGB — hero cards tint it gold, selected Lab tiles reuse
+    the same strip along their top edge (no rotated twin needed)."""
+    w, h = 64, 16
+    img = Image.new("RGBA", (w, h))
+    px = img.load()
+    for x in range(w):
+        t = x / max(1, w - 1)
+        a = int(max(0.0, 1.0 - t) ** 0.7 * 255)
+        for y in range(h):
+            px[x, y] = (255, 255, 255, a)
+    save(img, "accent.tga")
+
+
+def make_spark_bar() -> None:
+    """Sparkline bar fill (8x32): denser at the baseline (bottom), airy at
+    the top — tinted gain-green at runtime (Overview sparkline v2)."""
+    w, h = 8, 32
+    img = Image.new("RGBA", (w, h))
+    px = img.load()
+    for y in range(h):
+        t = y / max(1, h - 1)  # 0 = top, 1 = bottom
+        a = int((0.45 + 0.55 * t) * 255)
+        for x in range(w):
+            px[x, y] = (255, 255, 255, a)
+    save(img, "spark_bar.tga")
+
+
+def make_bars() -> None:
+    """Top-3 gain bars: a track (flat low-alpha white) and a fill
+    (solid, soft fade in the last 15% of the width)."""
+    tw, th = 32, 16
+    track = Image.new("RGBA", (tw, th))
+    tpx = track.load()
+    for y in range(th):
+        for x in range(tw):
+            tpx[x, y] = (255, 255, 255, 42)
+    save(track, "bar_track.tga")
+
+    fw = 32
+    fill = Image.new("RGBA", (fw, th))
+    fpx = fill.load()
+    fade_from = fw * 0.85
+    for y in range(th):
+        for x in range(fw):
+            if x < fade_from:
+                a = 255
+            else:
+                a = int(max(0.0, 1.0 - (x - fade_from) / (fw - fade_from)) * 255)
+            fpx[x, y] = (255, 255, 255, a)
+    save(fill, "bar_fill.tga")
+
+
+def make_pip() -> None:
+    """Gauge pivot pip (16x16): soft-edged solid dot at the arc baseline."""
+    size = 16
+    img = Image.new("RGBA", (size, size))
+    px = img.load()
+    c = size / 2.0
+    radius = 6.0
+    for y in range(size):
+        for x in range(size):
+            d = math.hypot(x + 0.5 - c, y + 0.5 - c)
+            a = max(0.0, min(1.0, (radius + 1.0 - d) / 1.5))
+            px[x, y] = (255, 255, 255, int((a**0.8) * 255))
+    save(img, "gauge_pip.tga")
+
+
+def make_pre6() -> None:
+    make_accent()
+    make_spark_bar()
+    make_bars()
+    make_pip()
+
+
 def _load_font(size: int):
     for candidate in (
         "C:/Windows/Fonts/frizquadrata.ttf",
@@ -265,6 +344,7 @@ def main() -> None:
     make_buttons()
     make_ring()
     make_gauges()
+    make_pre6()
     for name, letter in RAIL_TILES.items():
         save(_letter_tile(32, letter, PANEL, GOLD), name)
     print("done.")

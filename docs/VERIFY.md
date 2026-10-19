@@ -242,3 +242,37 @@ note the result in this file (or tell the addon author).
     ("triple: baseline -> test -> after"), baselines/tests/per-test-gains
     lists, and a value line ending "(restored)" when the read-back
     landed.
+
+## pre.6 visual-pass items
+
+51. **Overview hero accents + units.** All three hero cards show the
+    gold top accent strip; the FPS value reads "NN FPS" and the frame
+    card reads "NN.N ms" while ticking (CountUp animation intact).
+52. **Gauge readout.** The dome shows the crowd word (Quiet/Busy/
+    Packed) centered above the baseline with the pivot pip; word, pip
+    and lit band share one ramp color, swapping together when the
+    crowd state changes; tooltips unchanged.
+53. **Sparkline v2.** Gradient green bars (denser at the baseline), two
+    faint horizontal grid lines, red spike markers on stutters; updates
+    once per second while Overview is visible.
+54. **Top-3 gain bars.** Rows read name | bar | "+X.X FPS"; the longest
+    bar belongs to the largest gain; negative gains tint red; with no
+    runs the first row shows the no-runs message and bars stay hidden.
+55. **Lab tile grid.** Two tiles per row; mouse wheel scrolls a whole
+    row; the selected tile shows the gold top accent; "Test only"
+    instantly updates every checkbox and accent on screen (no rebuild,
+    no stale fill).
+56. **Lab controls strip + joined modes.** The bottom area is one visible
+    strip; Quick and Thorough share a single backing with one divider;
+    active side wears the gold face; estimate text and Run button keep
+    their positions and sizes; combine toggle sits top-left inside the
+    strip.
+57. **Run overlay polish.** Glow behind the ring tints dim for
+    settle/warm-up and gold for measuring; a whole-seconds countdown
+    sits inside the ring and clears when the overlay hides; headline
+    color follows the phase; keep-still, cap lines, combat warning,
+    Cancel and the phase pattern ("Phase N of M") all behave as in
+    pre.5.
+58. **Media budget.** Gate reports 27 files / 853,156 bytes (< 1 MB);
+    regenerating with `python scripts/make-textures.py` reproduces
+    every texture byte-for-byte (deterministic seeds).
