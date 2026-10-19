@@ -19,6 +19,86 @@ All notable changes to CrowdCalm Lab are documented here.
   `scripts/check-lua.js` (static syntax/TOC gate).
 - Docs: `docs/VERIFY.md`, `docs/FIRST-RUN-CHECKLIST.md`, `docs/DESIGN.md`.
 
+## 1.0.0-pre.5 (2026-10-19)
+
+### Fixed
+
+- **Stutter page Lua error (owner report #1):** row clicks now run
+  through `OnMouseUp` on the row frames. `SetScript("OnClick")` is
+  Button-only and raised "script type not supported by this object" on
+  12.1.5, which killed the whole list render. Hover highlighting moved
+  off the Button-only HIGHLIGHT layer to explicit OnEnter/OnLeave.
+- **Addons page dead (owner report #3):** `GetNumAddOns`,
+  `GetAddOnInfo` and friends no longer exist on modern clients. Every
+  addon-list read now goes through new `Compat.GetNumAddOns` /
+  `Compat.GetAddOnInfo` resolvers (`C_AddOns` first, global fallback,
+  all pcall'd). CPU metric reads probe the `GetAddOnMetric`
+  name/index forms once and cache whichever works; memory reads accept
+  name or index. When the list API yields nothing, the page says
+  "Addon list API unavailable on this client" instead of pretending
+  the user has no addons.
+- **Font size and colorblind settings did nothing (owner report #2):**
+  font sizes are baked into shared font objects and colors are captured
+  at build time, so both now trigger `UI.ScheduleRebuild()`: the window
+  rebuilds in place after 0.15 s (deferred while a lab run is active,
+  restoring scale, position, and the current page) and confirms with
+  "Setting applied". EditBoxes (Addons search, report box, About URL)
+  follow the font-size preference too, via `Widgets.ApplyEditBoxFont`.
+- **UI scale resets while dragging (owner report #2):** sliders apply on
+  release instead of mid-drag — resizing the window under the cursor
+  used to yank the thumb to a wrong value before mouse-up. Keyboard
+  changes commit after a 0.35 s debounce, the value text formats
+  properly ("110%", "14"), and Settings re-syncs sliders silently on
+  show so no stray commit rebuilds the window on every visit.
+
+### Added
+
+- **UI sounds and a working mute (owner request):** new `Core/Sound.lua`
+  with click / toggle / done / error sounds (SOUNDKIT names with classic
+  SoundKit IDs as fallback). Buttons, checkboxes and dropdowns play
+  through it, and "Mute UI sounds" finally gates every playback —
+  unmuting confirms with one last click.
+- **Header FPS panel (owner report #7):** the bare top-right number is
+  now a chip — status dot, colored number, dim "FPS" label, tooltip, and
+  a click through to the Overview page. The client chip moved left and
+  sizes itself to its text.
+- **Minimap icon like before (owner report #6):** icon inset restored to
+  5 px (22 px logo) while keeping the uncropped square and the ring
+  bezel.
+- **Measurement stability engine v2 (owner spec):** every phase is now
+  [apply or restore] -> 6 s settle -> 4 s warm-up (dropped by the new
+  `Stats.Begin(ignoreSeconds)` window) -> measured sample (the slider's
+  seconds). Quick runs A-B-A; Thorough runs A-B-A-B-A-B-A — 7 phases,
+  4 shared baselines — and each test is compared against the average of
+  its two neighbouring baselines, reported as the median gain plus the
+  min..max spread. Baselines drifting more than 8% now flag the row
+  "Not reliable", and the card shows the actual difference plus a rerun
+  tip.
+- **Movement watchdog:** `GetUnitSpeed` and `GetPlayerFacing` (probed
+  once at load, warn-only) flag a row when the player moves for more
+  than 2.5 s or turns more than 120 degrees during a run. Once per run a
+  banner warns; cards show a marker; the report gets a WARNING line.
+- **Caps preflight, read-only:** before each run the lab reads Max FPS
+  (`maxfps`, falling back to `renderFrameRateCap`) and `gxVSync` — it
+  never writes them. A cap shows a banner, a persistent overlay line,
+  and a `Caps:` line in the report.
+- **Lab overlay:** keep-still advisory line ("Don't move, turn the
+  camera or touch the mouse during the run"), a warm-up countdown phase,
+  the cap warning line, and "Phase x of y" progress (3 or 7 phases per
+  setting). The estimate now matches the real phase timings.
+- **Results cards and report:** FPS triple (entry baseline -> mean test
+  -> exit baseline), values triple (from -> to -> read back after the
+  final restore), per-test gains and spread for Thorough, the baseline
+  difference percent, and movement flags — on the cards and in the Copy
+  report.
+
+### Changed
+
+- Settings defaults: `settleSeconds` 3 -> 6, new `ignoreSeconds` = 4;
+  the slider is relabeled "Measured seconds per phase".
+- Copy: "Re-test" chip -> "Not reliable"; pass counter -> "Phase x of
+  y"; About's how-it-works paragraph updated for the new phase flow.
+
 ## 1.0.0-pre.4 (2026-10-19)
 
 ### Changed

@@ -80,6 +80,43 @@ function Compat.describe()
     .. " | " .. table.concat(feats, " ")
 end
 
+-- pre.5: the addon-list globals (GetNumAddOns/GetAddOnInfo/...) were removed
+-- on modern clients; resolve C_AddOns first with a global fallback so the
+-- Addons page works on every supported client. Each resolver pcalls, so an
+-- absent function reads as an empty list instead of a load error.
+function Compat.GetNumAddOns()
+  if C_AddOns and C_AddOns.GetNumAddOns then
+    local ok, n = pcall(C_AddOns.GetNumAddOns)
+    if ok and type(n) == "number" then
+      return n
+    end
+  end
+  if GetNumAddOns then
+    local ok, n = pcall(GetNumAddOns)
+    if ok and type(n) == "number" then
+      return n
+    end
+  end
+  return 0
+end
+
+-- returns name, title for index i or nil when unavailable
+function Compat.GetAddOnInfo(i)
+  if C_AddOns and C_AddOns.GetAddOnInfo then
+    local ok, name, title = pcall(C_AddOns.GetAddOnInfo, i)
+    if ok and type(name) == "string" and name ~= "" then
+      return name, (type(title) == "string" and title) or name
+    end
+  end
+  if GetAddOnInfo then
+    local ok, name, title = pcall(GetAddOnInfo, i)
+    if ok and type(name) == "string" and name ~= "" then
+      return name, (type(title) == "string" and title) or name
+    end
+  end
+  return nil
+end
+
 ns.onLogin(function()
   ns.util.LogInfo(Compat.describe())
 end)

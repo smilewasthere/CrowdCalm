@@ -19,8 +19,9 @@ settings.defaults = {
     minimapButton = true,
   },
   lab = {
-    sampleSeconds = 8,
-    settleSeconds = 3,
+    sampleSeconds = 8, -- measured seconds per phase (the slider value)
+    settleSeconds = 6, -- pre.5: let the applied setting actually land
+    ignoreSeconds = 4, -- pre.5: warm-up tail dropped before measuring
     defaultMode = "quick", -- "quick" | "thorough"
     fpsStutterFloor = 30,
   },

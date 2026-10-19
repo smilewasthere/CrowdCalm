@@ -92,11 +92,17 @@ local function buildHeader(parent)
 
   local chip = CreateFrame("Frame", nil, header)
   chip:SetSize(150, 22)
-  chip:SetPoint("RIGHT", header, "RIGHT", -140, 0)
+  -- pre.5: moved left (-180) to make room for the FPS panel chip; width now
+  -- follows the client string instead of a fixed 150 px
+  chip:SetPoint("RIGHT", header, "RIGHT", -180, 0)
   Skin.ApplyPanel(chip, { base = ns.palette.panel, borderAlpha = 0.6 })
   local chipText = Widgets.Text(chip, "small", ns.compat.chip or "")
   chipText:SetPoint("CENTER")
   Skin.ColorText(chipText, ns.compat.chipColor or ns.palette.gainColor())
+  do
+    local w = chipText.GetStringWidth and chipText:GetStringWidth() or 150
+    chip:SetWidth(math.max(96, math.ceil(w) + 24))
+  end
   Widgets.TooltipLines(chip, function()
     return {
       "Target client: " .. (ns.compat.chip or "?"),
@@ -104,21 +110,36 @@ local function buildHeader(parent)
     }
   end)
 
-  fpsDot = header:CreateTexture(nil, "ARTWORK")
+  -- pre.5: the top-right number read as a bare floating counter (owner
+  -- report #7) — it is now an explicit FPS panel chip: dot + number + dim
+  -- "FPS" label, same tooltip as before, and clicking jumps to Overview.
+  local fpsChip = CreateFrame("Button", nil, header)
+  fpsChip:SetSize(88, 24)
+  fpsChip:SetPoint("RIGHT", header, "RIGHT", -84, 0)
+  Skin.ApplyPanel(fpsChip, { base = ns.palette.panel, borderAlpha = 0.6 })
+  fpsDot = fpsChip:CreateTexture(nil, "ARTWORK")
   fpsDot:SetSize(8, 8)
-  fpsDot:SetPoint("RIGHT", header, "RIGHT", -100, 0)
+  fpsDot:SetPoint("LEFT", 9, 0)
   fpsDot:SetColorTexture(ns.palette.gainColor().r, ns.palette.gainColor().g, ns.palette.gainColor().b, 1)
 
-  fpsText = Widgets.Text(header, "number", "--")
+  fpsText = Widgets.Text(fpsChip, "number", "--")
   fpsText:SetPoint("LEFT", fpsDot, "RIGHT", 6, 0)
-  Widgets.TooltipLines(fpsText, function()
+  local fpsLabel = Widgets.Text(fpsChip, "small", "FPS")
+  fpsLabel:SetPoint("RIGHT", fpsChip, "RIGHT", -8, 0)
+  Skin.ColorText(fpsLabel, ns.palette.textDim)
+  Widgets.TooltipLines(fpsChip, function()
     ns.context.Update()
     local t = (ns.context and ns.context.Label() or "—")
     return {
       "Live framerate while the window is open",
       "Crowd traffic: " .. t,
+      "Click to open the Overview page",
     }
   end)
+  fpsChip:SetScript("OnClick", function()
+    UI.SwitchPage(1)
+  end)
+  fpsChip:EnableMouse(true)
 
   local closeBtn = Widgets.Button(header, {
     height = 24,
@@ -523,15 +544,9 @@ end
 -- The window build is all-or-nothing: if any construction step throws, the
 -- partial frame is discarded and the next open rebuilds from scratch. This
 -- is what prevented the pre-1.0.0-pre.2 "header only, empty body" state,
--- where a half-built window kept getting re-shown.
-local function ensureWindow()
-  if frame then
-    return frame
-  end
-  local ok, err = pcall(buildWindow)
-  if ok then
-    return frame
-  end
+-- where a half-built window kept getting re-shown. pre.5: the teardown half
+-- lives in discardWindow so the intentional rebuild path reuses it.
+local function discardWindow()
   if frame then
     frame:Hide() -- fires OnHide if scripts were attached; releases tickers
   end
@@ -544,6 +559,17 @@ local function ensureWindow()
   pageFrames = {}
   pageTickFailed = {}
   currentPage = nil
+end
+
+local function ensureWindow()
+  if frame then
+    return frame
+  end
+  local ok, err = pcall(buildWindow)
+  if ok then
+    return frame
+  end
+  discardWindow()
   Util.LogError("window build", err)
   Widgets.ErrorPopup(
     "CrowdCalm Lab could not build its window:\n\n"
@@ -551,6 +577,47 @@ local function ensureWindow()
       .. "\n\nThe full error was printed to chat. Please report it via the GitHub link in About."
   )
   return nil
+end
+
+-- pre.5: font-size and colorblind preferences are baked into shared font
+-- objects and per-widget colors at build time (owner: "font options not
+-- working", "colorblind not working") — the reliable fix is to rebuild the
+-- window. The rebuild is delayed so slider drags stay smooth, never runs
+-- while a lab test is in flight (its cover/overlay wiring would be lost),
+-- and restores scale, position, and the current page via the normal
+-- OnShow path.
+local rebuildTimer = nil
+
+local function doRebuild()
+  rebuildTimer = nil
+  if not frame then
+    return
+  end
+  if ns.lab and ns.lab.IsRunning() then
+    rebuildTimer = C_Timer.After(5, doRebuild)
+    return
+  end
+  local wasShown = frame:IsShown()
+  discardWindow()
+  local f = ensureWindow()
+  if not f then
+    return -- build failed; error popup already surfaced
+  end
+  if wasShown then
+    f:Show() -- OnShow restores ns.db.ui.page, meter, and the 1 Hz ticker
+    ns.ui.ShowBanner(L("set_applied"), "gainColor", 3)
+  end
+end
+
+function UI.ScheduleRebuild(reason)
+  if rebuildTimer then
+    rebuildTimer:Cancel()
+    rebuildTimer = nil
+  end
+  if reason then
+    Util.LogInfo("ui rebuild scheduled: " .. tostring(reason))
+  end
+  rebuildTimer = C_Timer.After(0.15, doRebuild)
 end
 
 function UI.ApplyUIScale(scale)

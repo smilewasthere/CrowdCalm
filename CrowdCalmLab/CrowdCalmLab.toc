@@ -14,6 +14,7 @@ Core/Events.lua
 Core/Locale.lua
 Core/Util.lua
 Core/Compat.lua
+Core/Sound.lua
 
 # Data
 Data/Palette.lua

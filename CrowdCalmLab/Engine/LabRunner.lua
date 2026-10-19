@@ -1,10 +1,18 @@
--- Engine/LabRunner.lua — the A-B-A heart of the lab (brief section 5.3).
--- For each selected setting: sample A1 (8 s), lower it, settle (3 s), sample
--- B (8 s), restore, settle (3 s), sample A2 (8 s). Gain = B - avg(A1,A2);
--- A1/A2 diverging by more than 10% marks the row "Noisy, rerun". Quick runs
--- once; Thorough repeats 3x and takes the median. Records the apply-moment
--- hitch (worst sample within 1 s after each set). Cancel, combat, foreign
--- CVar changes and read-back mismatches all restore through CVarGuard.
+-- Engine/LabRunner.lua — the A-B-A heart of the lab (brief section 5.3,
+-- reworked in pre.5 for measurement stability). Every phase is the same
+-- shape: [apply or restore action] -> settle (6 s) -> warm-up (4 s, ignored
+-- by Stats) -> measured sample (sampleSeconds, the slider value). Quick
+-- plans A-B-A (3 phases); Thorough plans A-B-A-B-A-B-A (7 phases): 4 shared
+-- baselines and 3 tests, each test compared against the average of its two
+-- neighbouring baselines, reported as the median gain plus the min-max
+-- spread. Baselines diverging more than Stats.UNRELIABLE_PCT percent mark
+-- the row "Not reliable" with the actual difference for the card. A
+-- movement watchdog (GetUnitSpeed/GetPlayerFacing, probed once) warns when
+-- the player moves or turns during a run; a read-only caps preflight reads
+-- Max FPS/VSync before the run and never writes them. Records the
+-- apply-moment hitch (worst sample within 1 s after each set). Cancel,
+-- combat, foreign CVar changes and read-back mismatches all restore through
+-- CVarGuard.
 local ADDON_NAME, ns = ...
 
 local Lab = {}
@@ -15,14 +23,16 @@ Lab.activeRunId = 0
 Lab.lastError = nil -- { key = "combat"|"instance"|"noselect"|"cancelled"|"foreign"|"noapi", ... }
 Lab.lastRun = nil
 Lab.completedAt = nil
+Lab.caps = nil -- read-only Max FPS/VSync preflight of the last run (pre.5)
+Lab.moved = false -- movement watchdog fired during the last run (pre.5)
 local mode = "quick"
 
 Lab.progress = {
-  phase = "", -- "sample" | "settle" | "applying" | "restoring" | ""
+  phase = "", -- "sample" | "settle" | "warmup" | "applying" | "restoring" | ""
   cand = nil,
   labelKey = nil,
-  pass = 1,
-  passes = 1,
+  pass = 1, -- current phase within the plan (pre.5)
+  passes = 1, -- phase count: Quick 3, Thorough 7 (pre.5)
   stepFrom = nil,
   stepTo = nil,
   gain = nil,
@@ -35,15 +45,35 @@ Lab.progress = {
 local phaseTimer = nil
 local jobs = {}
 local jobIndex = 1
-local pass = 1
-local passes = 1
+local plan = {} -- phase plan for the current mode (see buildPlan)
+local snaps = {} -- ordered per-phase snapshots for the current job
+local phaseIdx = 1
 local rows = {}
 local runSeq = 0
 local hitchWorst = nil
 local hitchWindow = 0
 
-local snapA1, snapB, snapA2 = nil, nil, nil
 local hitchApply = nil -- worst FPS in the 1 s window after the apply (review I4)
+local anyHitch = false
+local worstHitchFps = nil
+
+-- pre.5: movement watchdog state (ticked from Lab.OnSample, 4 Hz)
+local moveAccum = 0 -- seconds of real movement (0.25 per moving sample)
+local turnAccum = 0 -- radians of camera yaw change
+local lastFacing = nil
+local jobMoved = false -- player moved/turned during the current job
+local runMoved = false -- any movement during this run (banner + run record)
+local speedFn = nil
+local facingFn = (type(GetPlayerFacing) == "function") and GetPlayerFacing or nil
+
+-- probe once at load: the watchdog degrades to FPS-only when the client
+-- lacks GetUnitSpeed (never errors, never blocks a run)
+if type(GetUnitSpeed) == "function" then
+  local ok = pcall(GetUnitSpeed, "player")
+  if ok then
+    speedFn = GetUnitSpeed
+  end
+end
 
 local function cancelTimer()
   if phaseTimer then
@@ -63,7 +93,7 @@ local function labSettings()
   if ns.db and ns.db.settings and ns.db.settings.lab then
     return ns.db.settings.lab
   end
-  return { sampleSeconds = 8, settleSeconds = 3, defaultMode = "quick" }
+  return { sampleSeconds = 8, settleSeconds = 6, ignoreSeconds = 4, defaultMode = "quick" }
 end
 
 local function snapshotCopy()
@@ -142,11 +172,12 @@ local function buildRow(j, before, after, gain, noisyFlag, hitchFlag, hitchFps, 
     gain = gain,
     medBefore = before,
     medAfter = after,
-    p5Before = snapA1 and snapA1.p5 or 0,
-    p5After = snapB and snapB.p5 or 0,
-    longBefore = snapA1 and longTotal(snapA1) or 0,
-    longAfter = snapB and longTotal(snapB) or 0,
-    noisy = noisyFlag,
+    -- p5/long fills come from the aggregate path; not-testable rows keep 0
+    p5Before = 0,
+    p5After = 0,
+    longBefore = 0,
+    longAfter = 0,
+    noisy = noisyFlag, -- pre.5: "Not reliable" (baselines over the limit)
     confidence = ns.stats.confidence(mode, noisyFlag),
     hitch = hitchFlag,
     hitchFps = hitchFps,
@@ -155,21 +186,179 @@ local function buildRow(j, before, after, gain, noisyFlag, hitchFlag, hitchFps, 
     cost = cost,
     valueFrom = j.baseValue,
     valueTo = j.lowers and j.lowers[1] or nil,
+    changed = jobMoved, -- pre.5: movement watchdog flag for this job
     changes = changes,
   }
 end
 
 -- ------------------------------------------------------------ phases ------
+-- pre.5: one shared pipeline for both modes (see the header comment). The
+-- plan decides how many phases a job runs; everything after it is identical
+-- for Quick and Thorough.
 
-local phaseA1Done, phasePreB, phaseBDone, phasePreA2, phaseA2Done
+local runPhase, completeJob
 
-local function startPass()
-  local j = currentJob()
+local function buildPlan()
+  if mode == "thorough" then
+    return {
+      { kind = "A", action = "none" },
+      { kind = "B", action = "apply" },
+      { kind = "A", action = "restore" },
+      { kind = "B", action = "apply" },
+      { kind = "A", action = "restore" },
+      { kind = "B", action = "apply" },
+      { kind = "A", action = "restore" },
+    }
+  end
+  return {
+    { kind = "A", action = "none" },
+    { kind = "B", action = "apply" },
+    { kind = "A", action = "restore" },
+  }
+end
+
+local function advanceJob()
+  jobIndex = jobIndex + 1
+  phaseIdx = 1
+  snaps = {}
+  if jobIndex > #jobs then
+    ns.lab.FinishRun()
+  else
+    ns.lab.StartJob()
+  end
+end
+
+local beginWarmup, beginSample, phaseDone
+
+beginSample = function()
   Lab.progress.phase = "sample"
+  setPhase(labSettings().sampleSeconds, phaseDone)
+end
+
+beginWarmup = function()
+  local ph = plan[phaseIdx]
+  if ph and ph.action == "apply" then
+    hitchApply = hitchWorst -- keep the apply-moment hitch (review I4)
+    local ref = snaps[1]
+    if hitchApply and ref and ref.avg > 0 then
+      if ((ref.avg - hitchApply) / ref.avg) > 0.20 then
+        anyHitch = true
+      end
+      if not worstHitchFps or hitchApply < worstHitchFps then
+        worstHitchFps = hitchApply
+      end
+    end
+  end
+  local s = labSettings()
+  ns.stats.Begin(s.ignoreSeconds)
+  Lab.progress.phase = "warmup"
+  setPhase(math.max(1, tonumber(s.ignoreSeconds) or 4), beginSample)
+end
+
+phaseDone = function()
+  snaps[phaseIdx] = snapshotCopy()
+  phaseIdx = phaseIdx + 1
+  if phaseIdx <= #plan then
+    runPhase()
+  else
+    completeJob()
+  end
+end
+
+completeJob = function()
+  local j = currentJob()
+  local aList, bList = {}, {}
+  for i = 1, #plan do
+    if plan[i].kind == "A" then
+      aList[#aList + 1] = snaps[i]
+    else
+      bList[#bList + 1] = snaps[i]
+    end
+  end
+  if #aList == 0 or #bList == 0 then
+    -- defensive: a truncated plan must not produce a fabricated result
+    rows[#rows + 1] = buildRow(j, nil, nil, nil, false, false, nil, true, "truncated")
+    advanceJob()
+    return
+  end
+  local baselines, tests = {}, {}
+  local aSum, bSum, aP5, bP5, aLong, bLong = 0, 0, 0, 0, 0, 0
+  for i, s in ipairs(aList) do
+    baselines[i] = s.avg
+    aSum = aSum + s.avg
+    aP5 = aP5 + s.p5
+    aLong = aLong + longTotal(s)
+  end
+  for i, s in ipairs(bList) do
+    tests[i] = s.avg
+    bSum = bSum + s.avg
+    bP5 = bP5 + s.p5
+    bLong = bLong + longTotal(s)
+  end
+  -- per-test gains against the average of the two neighbouring baselines
+  local gains = {}
+  for i = 1, #bList do
+    gains[i] = tests[i] - ((baselines[i] + baselines[i + 1]) / 2)
+  end
+  local sorted = {}
+  for i = 1, #gains do
+    sorted[i] = gains[i]
+  end
+  table.sort(sorted)
+  local gain = sorted[math.floor((#sorted + 1) / 2)]
+  local baselinePct = ns.stats.baselineDivergence(baselines)
+  local unreliable = baselinePct > ns.stats.UNRELIABLE_PCT
+
+  local before = aSum / #aList
+  local after = bSum / #bList
+  local row = buildRow(j, before, after, gain, unreliable, anyHitch, worstHitchFps, false, nil)
+  row.p5Before = aP5 / #aList
+  row.p5After = bP5 / #bList
+  row.longBefore = aLong / #aList
+  row.longAfter = bLong / #bList
+  -- pre.5 display triples: entry baseline, mean test, exit baseline, plus
+  -- the per-test gains and their min..max spread for Thorough (the gain
+  -- itself is the median — labeled as such in Results)
+  row.fpsBefore = baselines[1]
+  row.fpsTest = after
+  row.fpsAfter = baselines[#baselines]
+  row.baselines = baselines
+  row.tests = tests
+  row.gains = gains
+  row.spreadMin = sorted[1]
+  row.spreadMax = sorted[#sorted]
+  row.baselinePct = baselinePct
+  row.unreliable = unreliable
+  -- values triple: from -> to -> read back after the final restore
+  row.valueAfter = tonumber(ns.cvarGuard.Read(j.keys[1]))
+  if row.changes then
+    for i = 1, #row.changes do
+      local ch = row.changes[i]
+      ch.after = tonumber(ns.cvarGuard.Read(ch.key))
+    end
+  end
+  Lab.progress.gain = gain
+  Lab.progress.noisy = unreliable
+  Lab.progress.hitch = anyHitch
+  rows[#rows + 1] = row
+  advanceJob()
+end
+
+runPhase = function()
+  local j = currentJob()
+  local ph = plan[phaseIdx]
+  if not j then
+    ns.lab.FinishRun()
+    return
+  end
+  if not ph then
+    advanceJob()
+    return
+  end
   Lab.progress.cand = j.cands[1]
   Lab.progress.labelKey = j.labelKey
-  Lab.progress.pass = pass
-  Lab.progress.passes = passes
+  Lab.progress.pass = phaseIdx
+  Lab.progress.passes = #plan
   Lab.progress.jobIndex = jobIndex
   Lab.progress.jobCount = #jobs
   Lab.progress.stepFrom = j.baseValue
@@ -177,146 +366,39 @@ local function startPass()
   Lab.progress.gain = nil
   Lab.progress.noisy = false
   Lab.progress.hitch = false
-  snapA1, snapB, snapA2 = nil, nil, nil
-  ns.stats.Reset()
-  setPhase(labSettings().sampleSeconds, phaseA1Done)
-end
 
-phaseA1Done = function()
-  snapA1 = snapshotCopy()
-  local j = currentJob()
-  Lab.progress.phase = "applying"
-  ns.context.Update(true)
-  -- apply every CVar of this job
-  local failed = false
-  for i = 1, #j.keys do
-    local key = j.keys[i]
-    local ok, err = ns.cvarGuard.Apply(key, j.lowers[i])
-    if not ok then
-      failed = true
-      j.failReason = tostring(err)
-      break
-    end
-  end
-  if failed then
-    ns.cvarGuard.EndTest()
-    rows[#rows + 1] = buildRow(j, nil, nil, nil, false, false, nil, true, j.failReason)
-    jobIndex = jobIndex + 1
-    pass = 1
-    if jobIndex > #jobs then
-      ns.lab.FinishRun()
-    else
-      ns.lab.StartJob()
-    end
-    return
-  end
-  hitchWorst = nil
-  hitchWindow = 1.0
-  hitchApply = nil
-  setPhase(labSettings().settleSeconds, phasePreB)
-end
-
-phasePreB = function()
-  Lab.progress.phase = "sample"
-  hitchApply = hitchWorst -- keep the apply-moment hitch (review I4)
-  ns.stats.Reset()
-  setPhase(labSettings().sampleSeconds, phaseBDone)
-end
-
-phaseBDone = function()
-  snapB = snapshotCopy()
-  local j = currentJob()
-  Lab.progress.phase = "restoring"
-  for i = 1, #j.keys do
-    ns.cvarGuard.Restore(j.keys[i])
-  end
-  hitchWorst = nil
-  hitchWindow = 1.0
-  setPhase(labSettings().settleSeconds, phasePreA2)
-end
-
-phasePreA2 = function()
-  Lab.progress.phase = "sample"
-  ns.stats.Reset()
-  setPhase(labSettings().sampleSeconds, phaseA2Done)
-end
-
-phaseA2Done = function()
-  snapA2 = snapshotCopy()
-  local j = currentJob()
-  local gain = snapB.avg - ((snapA1.avg + snapA2.avg) / 2)
-  local noisyFlag = ns.stats.noisy(snapA1.avg, snapA2.avg)
-  local hitchFlag = false
-  local hitchFps = nil
-  if hitchApply and snapA1.avg > 0 then
-    hitchFps = hitchApply
-    if ((snapA1.avg - hitchApply) / snapA1.avg) > 0.20 then
-      hitchFlag = true
-    end
-  end
-  -- per-pass record for Thorough aggregation
-  j.results[pass] = {
-    gain = gain,
-    before = snapA1.avg,
-    after = snapB.avg,
-    noisy = noisyFlag,
-    hitch = hitchFlag,
-    hitchFps = hitchFps,
-    p5Before = snapA1.p5,
-    p5After = snapB.p5,
-    longBefore = longTotal(snapA1),
-    longAfter = longTotal(snapB),
-  }
-  Lab.progress.gain = gain
-  Lab.progress.noisy = noisyFlag
-  Lab.progress.hitch = hitchFlag
-  pass = pass + 1
-  if pass <= passes then
-    startPass()
-  else
-    -- aggregate passes (median gain for Thorough)
-    local results = j.results
-    local gains = {}
-    for i = 1, #results do
-      gains[i] = results[i].gain
-    end
-    table.sort(gains)
-    local medianGain = gains[math.floor((#gains + 1) / 2)]
-    local anyNoisy, anyHitch, worstHitch = false, false, nil
-    local before, after, p5b, p5a, lb, la = 0, 0, 0, 0, 0, 0
-    for i = 1, #results do
-      local r = results[i]
-      if r.noisy then
-        anyNoisy = true
+  if ph.action == "apply" then
+    Lab.progress.phase = "applying"
+    hitchWorst = nil
+    hitchWindow = 1.0
+    local failed = false
+    for i = 1, #j.keys do
+      local ok, err = ns.cvarGuard.Apply(j.keys[i], j.lowers[i])
+      if not ok then
+        failed = true
+        j.failReason = tostring(err)
+        break
       end
-      if r.hitch then
-        anyHitch = true
-        if not worstHitch or (r.hitchFps and r.hitchFps < worstHitch) then
-          worstHitch = r.hitchFps
-        end
-      end
-      before = before + r.before
-      after = after + r.after
-      p5b = p5b + r.p5Before
-      p5a = p5a + r.p5After
-      lb = lb + r.longBefore
-      la = la + r.longAfter
     end
-    local n = #results
-    local row = buildRow(j, before / n, after / n, medianGain, anyNoisy, anyHitch, worstHitch, false, nil)
-    row.p5Before = p5b / n
-    row.p5After = p5a / n
-    row.longBefore = lb / n
-    row.longAfter = la / n
-    rows[#rows + 1] = row
-    jobIndex = jobIndex + 1
-    pass = 1
-    if jobIndex > #jobs then
-      ns.lab.FinishRun()
-    else
-      ns.lab.StartJob()
+    if failed then
+      ns.cvarGuard.EndTest()
+      rows[#rows + 1] = buildRow(j, nil, nil, nil, false, false, nil, true, j.failReason)
+      advanceJob()
+      return
+    end
+    ns.context.Update(true)
+  elseif ph.action == "restore" then
+    Lab.progress.phase = "restoring"
+    hitchWorst = nil
+    hitchWindow = 1.0
+    for i = 1, #j.keys do
+      ns.cvarGuard.Restore(j.keys[i])
     end
   end
+
+  ns.stats.Reset()
+  Lab.progress.phase = "settle"
+  setPhase(labSettings().settleSeconds, beginWarmup)
 end
 
 -- --------------------------------------------------------- job control ----
@@ -342,21 +424,17 @@ function ns.lab.StartJob()
     jobIndex = 1
     return
   end
-  j.results = {}
   j.failReason = nil
+  anyHitch, worstHitchFps = false, nil
+  moveAccum, turnAccum, lastFacing = 0, 0, nil
+  jobMoved = false
   local baseValue = nil
   for i = 1, #j.keys do
     local v = ns.cvarGuard.Read(j.keys[i])
     local num = tonumber(v)
     if num == nil then
       rows[#rows + 1] = buildRow(j, nil, nil, nil, false, false, nil, true, "unreadable")
-      jobIndex = jobIndex + 1
-      pass = 1
-      if jobIndex > #jobs then
-        ns.lab.FinishRun()
-      else
-        ns.lab.StartJob()
-      end
+      advanceJob()
       return
     end
     if i == 1 then
@@ -373,13 +451,7 @@ function ns.lab.StartJob()
     local lower = computeLower(cand, num)
     if lower == nil then
       rows[#rows + 1] = buildRow(j, nil, nil, nil, false, false, nil, true, "already-lowest")
-      jobIndex = jobIndex + 1
-      pass = 1
-      if jobIndex > #jobs then
-        ns.lab.FinishRun()
-      else
-        ns.lab.StartJob()
-      end
+      advanceJob()
       return
     end
     lowers[i] = lower
@@ -387,7 +459,10 @@ function ns.lab.StartJob()
   j.fromValues = fromValues
   j.lowers = lowers
   j.lower = lowers[1] -- progress.stepTo (was never set before pre.3)
-  startPass()
+  snaps = {}
+  phaseIdx = 1
+  ns.stats.Reset()
+  runPhase()
 end
 
 function ns.lab.FinishRun()
@@ -407,6 +482,8 @@ function ns.lab.FinishRun()
     crowd = ns.context.Label(),
     mode = mode,
     client = (ns.compat and ns.compat.chip) or "",
+    moved = runMoved, -- pre.5: movement watchdog fired during this run
+    caps = Lab.caps, -- pre.5: read-only Max FPS/VSync preflight for the report
     rows = rows,
   }
   Lab.lastRun = run
@@ -429,6 +506,41 @@ end
 
 -- ------------------------------------------------------------- public -----
 
+-- pre.5: read-only caps preflight. A Max FPS cap or VSync limits what a run
+-- can measure, so the run warns up front (banner, overlay line, report
+-- header). Candidate names are probed, never written — this file must not
+-- contain a single SetCVar for these keys (owner: "check, never set").
+local CAP_CANDIDATES = { "maxfps", "renderFrameRateCap" }
+
+local function readCaps()
+  local caps = { maxfps = nil, capName = nil, vsync = false, warnings = {} }
+  if not (C_CVar and C_CVar.GetCVar) then
+    return caps -- no CVar API at all: Lab.Run already gates on the cvar feature
+  end
+  for _, name in ipairs(CAP_CANDIDATES) do
+    local ok, v = pcall(C_CVar.GetCVar, name)
+    if ok and v ~= nil and v ~= "" then
+      local num = tonumber(v)
+      if num ~= nil then
+        caps.maxfps = num
+        caps.capName = name
+        break
+      end
+    end
+  end
+  local okV, vs = pcall(C_CVar.GetCVar, "gxVSync")
+  if okV and (vs == "1" or vs == 1 or vs == true) then
+    caps.vsync = true
+  end
+  if caps.maxfps and caps.maxfps > 0 then
+    caps.warnings[#caps.warnings + 1] = "maxfps"
+  end
+  if caps.vsync then
+    caps.warnings[#caps.warnings + 1] = "vsync"
+  end
+  return caps
+end
+
 function Lab.Run(runMode, selectedIds)
   if Lab.state == "running" then
     return false, "running"
@@ -447,11 +559,17 @@ function Lab.Run(runMode, selectedIds)
     return false, "instance"
   end
   mode = (runMode == "thorough") and "thorough" or "quick"
-  passes = (mode == "thorough") and 3 or 1
+  plan = buildPlan()
   jobs = {}
   jobIndex = 1
-  pass = 1
   rows = {}
+  snaps = {}
+  phaseIdx = 1
+  anyHitch, worstHitchFps = false, nil
+  moveAccum, turnAccum, lastFacing = 0, 0, nil
+  jobMoved, runMoved = false, false
+  Lab.moved = false
+  Lab.caps = readCaps()
   for _, cand in ipairs(ns.settings.testable()) do
     if cand.key and selectedIds[cand.id] then
       jobs[#jobs + 1] = {
@@ -503,7 +621,7 @@ function Lab.Run(runMode, selectedIds)
   Lab.lastError = nil
   Lab.activeRunId = runSeq + 1
   ns.meter.Acquire()
-  ns.lab.StartJob()
+  ns.lab.StartJob() -- runs plan[1] (entry baseline) immediately
   return true
 end
 
@@ -520,17 +638,24 @@ function Lab.Cancel()
   rows = {}
   jobs = {}
   jobIndex = 1
+  snaps = {}
+  phaseIdx = 1
 end
 
 function Lab.IsRunning()
   return Lab.state == "running"
 end
 
--- estimated wall-clock seconds for the Run button
+-- estimated wall-clock seconds for the Run button (pre.5: every phase costs
+-- settle + warm-up + measured sample + ~1 s of actions)
 function Lab.EstimateSeconds(runMode, jobCount)
   local s = labSettings()
-  local p = (runMode == "thorough") and 3 or 1
-  return jobCount * p * ((s.sampleSeconds * 3) + (s.settleSeconds * 2) + 1)
+  local phases = (runMode == "thorough") and 7 or 3
+  local perPhase = (tonumber(s.settleSeconds) or 6)
+    + (tonumber(s.ignoreSeconds) or 4)
+    + (tonumber(s.sampleSeconds) or 8)
+    + 1
+  return jobCount * phases * perPhase
 end
 
 function Lab.Progress()
@@ -544,6 +669,42 @@ function Lab.OnSample(fps)
       hitchWorst = fps
     end
     hitchWindow = hitchWindow - 0.25
+  end
+  if Lab.state ~= "running" then
+    return
+  end
+  -- pre.5 movement watchdog: warn-only, never aborts the run. Movement is
+  -- counted in the 0.25 s sample quanta; camera yaw accumulates wrapped
+  -- absolute deltas. Crossing a limit flags the row and (once per run)
+  -- shows a banner.
+  if speedFn then
+    local okSp, sp = pcall(speedFn, "player")
+    if okSp and type(sp) == "number" and sp > 0.1 then
+      moveAccum = moveAccum + 0.25
+    end
+  end
+  if facingFn then
+    local okF, f = pcall(facingFn)
+    if okF and type(f) == "number" then
+      if lastFacing then
+        local d = math.abs(f - lastFacing)
+        if d > math.pi then
+          d = (2 * math.pi) - d
+        end
+        turnAccum = turnAccum + d
+      end
+      lastFacing = f
+    end
+  end
+  if not jobMoved and (moveAccum > 2.5 or math.deg(turnAccum) > 120) then
+    jobMoved = true
+    runMoved = true
+    if not Lab.moved then
+      Lab.moved = true
+      if ns.ui and ns.ui.ShowBanner and ns.L then
+        pcall(ns.ui.ShowBanner, ns.L("moved_warn"), "danger", 6)
+      end
+    end
   end
 end
 

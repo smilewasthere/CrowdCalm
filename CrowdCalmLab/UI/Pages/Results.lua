@@ -19,6 +19,21 @@ local function utf8chop(s)
   return (s:gsub("[%z\1-\127\194-\244][\128-\191]*$", ""))
 end
 
+-- pre.5: number-list helpers for the Copy report (baselines/tests/gains)
+local function fmtNums(t, signed)
+  if type(t) ~= "table" then
+    return "?"
+  end
+  local parts = {}
+  for i = 1, #t do
+    parts[i] = (type(t[i]) == "number") and string.format(signed and "%+.1f" or "%.1f", t[i]) or "?"
+  end
+  if #parts == 0 then
+    return "?"
+  end
+  return table.concat(parts, ", ")
+end
+
 local function candNote(key)
   if not key or not (ns.settings and ns.settings.candidates) then
     return nil
@@ -67,8 +82,22 @@ end
 local COST_ORDER = { "None", "Low", "Medium", "High", "Unknown" }
 
 local function rowCard(parent, row, isBest, listWidth)
+  local kind = classify(row)
   local card = Widgets.Panel(parent, { base = ns.palette.raised, borderAlpha = 0.5 })
-  card:SetHeight(row.notTestable and 44 or 100)
+  -- pre.5: cards grow for the reliability detail (baseline difference + rerun
+  -- tip), the Thorough gain spread, or a movement marker
+  local extra = 0
+  if not row.notTestable then
+    if kind == "retest" and row.baselinePct ~= nil then
+      extra = 2
+    elseif row.gains and #row.gains > 1 then
+      extra = 1
+    end
+    if row.changed then
+      extra = extra + 1
+    end
+  end
+  card:SetHeight(row.notTestable and 44 or (100 + extra * 14))
 
   local name = Widgets.Text(card, "body", L(row.labelKey or row.key or "?"))
   name:SetPoint("TOPLEFT", 12, -8)
@@ -79,7 +108,6 @@ local function rowCard(parent, row, isBest, listWidth)
   end
 
   -- action chip, top right
-  local kind = classify(row)
   local chipText, chipColor
   if kind == "worth" then
     chipText, chipColor = L("act_worth"), ns.palette.gainColor()
@@ -103,7 +131,11 @@ local function rowCard(parent, row, isBest, listWidth)
     end)
   elseif kind == "retest" then
     Widgets.TooltipLines(chip, function()
-      return { L("noisy_note") }
+      local lines = { L("noisy_note") }
+      if row.baselinePct ~= nil then
+        lines[#lines + 1] = Lfmt("unreliable_pattern", row.baselinePct, ns.stats.UNRELIABLE_PCT)
+      end
+      return lines
     end)
   end
 
@@ -125,20 +157,33 @@ local function rowCard(parent, row, isBest, listWidth)
   end
   local sentenceFs = Widgets.Text(card, "small", sentence)
   sentenceFs:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -6)
+  local anchor = sentenceFs
 
   -- what was actually changed (+ what the setting does); rows from runs
-  -- made before pre.3 simply have no stored values and skip this line
+  -- made before pre.3 simply have no stored values and skip this line.
+  -- pre.5: the values triple reads from -> to -> after (read back after the
+  -- final restore), so the owner can see the value actually landed.
   local changeText, changeTip
   if row.changes and #row.changes > 1 then
     changeText = Lfmt("change_multi", #row.changes)
     changeTip = {}
     for _, ch in ipairs(row.changes) do
       local nm = ch.labelKey and L(ch.labelKey) or tostring(ch.key or "?")
-      changeTip[#changeTip + 1] = string.format("- %s: %s -> %s", nm, tostring(ch.from), tostring(ch.to))
+      if ch.after ~= nil then
+        changeTip[#changeTip + 1] = string.format("- %s: %s -> %s -> %s", nm, tostring(ch.from), tostring(ch.to), tostring(ch.after))
+      else
+        changeTip[#changeTip + 1] = string.format("- %s: %s -> %s", nm, tostring(ch.from), tostring(ch.to))
+      end
     end
   elseif row.valueFrom ~= nil and row.valueTo ~= nil then
     local note = candNote(row.key)
-    if note then
+    if row.valueAfter ~= nil then
+      if note then
+        changeText = Lfmt("change_note_restored", tostring(row.valueFrom), tostring(row.valueTo), tostring(row.valueAfter), note)
+      else
+        changeText = Lfmt("change_restored", tostring(row.valueFrom), tostring(row.valueTo), tostring(row.valueAfter))
+      end
+    elseif note then
       changeText = Lfmt("change_note_pattern", tostring(row.valueFrom), tostring(row.valueTo), note)
     else
       changeText = Lfmt("change_pattern", tostring(row.valueFrom), tostring(row.valueTo))
@@ -148,7 +193,8 @@ local function rowCard(parent, row, isBest, listWidth)
   end
   if changeText and changeText ~= "" then
     local changeFs = Widgets.Text(card, "small", changeText)
-    changeFs:SetPoint("TOPLEFT", sentenceFs, "BOTTOMLEFT", 0, -6)
+    changeFs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -6)
+    anchor = changeFs
     local maxW = math.max(200, (listWidth or 400) - 140)
     changeFs:SetWidth(maxW)
     changeFs:SetJustifyH("LEFT")
@@ -166,7 +212,40 @@ local function rowCard(parent, row, isBest, listWidth)
     end
   end
 
-  local beforeAfter = Widgets.Text(card, "small", Lfmt("before_after", row.before or 0, row.after or 0))
+  -- pre.5 detail lines: baseline difference + rerun tip (Not reliable),
+  -- Thorough per-test spread, movement marker
+  if not row.notTestable then
+    if kind == "retest" and row.baselinePct ~= nil then
+      local pctFs = Widgets.Text(card, "small", Lfmt("unreliable_pattern", row.baselinePct, ns.stats.UNRELIABLE_PCT))
+      pctFs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+      Skin.ColorText(pctFs, ns.palette.costColor())
+      anchor = pctFs
+      local tipFs = Widgets.Text(card, "small", L("unreliable_tip"))
+      tipFs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+      Skin.ColorText(tipFs, ns.palette.textDim)
+      anchor = tipFs
+    elseif row.gains and #row.gains > 1 and row.spreadMin ~= nil then
+      local spFs = Widgets.Text(card, "small", Lfmt("spread_pattern", row.spreadMin, row.spreadMax))
+      spFs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+      Skin.ColorText(spFs, ns.palette.textDim)
+      anchor = spFs
+    end
+    if row.changed then
+      local mvFs = Widgets.Text(card, "small", L("moved_row"))
+      mvFs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+      Skin.ColorText(mvFs, ns.palette.danger)
+      anchor = mvFs
+    end
+  end
+
+  -- FPS triple for pre.5 runs (entry baseline -> mean test -> exit
+  -- baseline); older stored runs fall back to the plain before -> after
+  local beforeAfter
+  if row.fpsBefore ~= nil and row.fpsAfter ~= nil then
+    beforeAfter = Widgets.Text(card, "small", Lfmt("fps_triple", row.fpsBefore, row.fpsTest or 0, row.fpsAfter))
+  else
+    beforeAfter = Widgets.Text(card, "small", Lfmt("before_after", row.before or 0, row.after or 0))
+  end
   beforeAfter:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 12, 8)
 
   local conf = Widgets.Text(card, "small", L("confidence") .. ": " .. (row.confidence or "?"))
@@ -176,6 +255,12 @@ local function rowCard(parent, row, isBest, listWidth)
     local c = row.confidence
     local tip = { L("conf_tip_1") }
     tip[#tip + 1] = L(c == "Low" and "conf_tip_low" or c == "High" and "conf_tip_high" or "conf_tip_med")
+    if row.baselinePct ~= nil then
+      tip[#tip + 1] = Lfmt("unreliable_pattern", row.baselinePct, ns.stats.UNRELIABLE_PCT)
+    end
+    if row.gains and #row.gains > 1 then
+      tip[#tip + 1] = Lfmt("spread_pattern", row.spreadMin or 0, row.spreadMax or 0)
+    end
     return tip
   end)
 
@@ -394,6 +479,21 @@ local function create(parent)
       lines[#lines + 1] = "Crowd: " .. ns.context.Label()
       if run then
         lines[#lines + 1] = string.format("Run #%d mode=%s", run.id or 0, tostring(run.mode))
+        -- pre.5: caps preflight + movement warning in the report header
+        if run.caps then
+          local c = run.caps
+          local bits = {
+            "maxfps=" .. ((c.maxfps and c.maxfps > 0) and tostring(c.maxfps) or "uncapped/unknown"),
+            "vsync=" .. (c.vsync and "on" or "off"),
+          }
+          if c.warnings and #c.warnings > 0 then
+            bits[#bits + 1] = "WARNING: a frame cap may limit these results (" .. table.concat(c.warnings, ", ") .. ")"
+          end
+          lines[#lines + 1] = "Caps: " .. table.concat(bits, " ")
+        end
+        if run.moved then
+          lines[#lines + 1] = "WARNING: movement or camera turning detected during the run"
+        end
         local repRows = {}
         for _, r in ipairs(run.rows or {}) do
           repRows[#repRows + 1] = r
@@ -429,15 +529,51 @@ local function create(parent)
           if row.notTestable then
             lines[#lines + 1] = string.format("- %s: not tested (%s)", L(row.labelKey or "?"), tostring(row.reason))
           else
+            -- pre.5: full measurement detail — triples, per-test gains,
+            -- baseline difference, restored value, movement flag
+            local spreadStr = ""
+            if row.gains and #row.gains > 1 and row.spreadMin ~= nil then
+              spreadStr = string.format(" median of %d tests, range %+.1f..%+.1f", #row.gains, row.spreadMin, row.spreadMax)
+            end
             lines[#lines + 1] = string.format(
-              "- %s: %.1f -> %.1f FPS (gain %+.1f, confidence %s%s)",
+              "- %s: %.1f -> %.1f FPS (gain %+.1f%s, confidence %s%s%s)",
               L(row.labelKey or "?"),
               row.before or 0,
               row.after or 0,
               row.gain or 0,
+              spreadStr,
               tostring(row.confidence),
-              row.noisy and ", NOISY" or ""
+              row.noisy and ", NOT RELIABLE" or "",
+              row.changed and ", MOVED" or ""
             )
+            if row.fpsBefore ~= nil then
+              lines[#lines + 1] = string.format(
+                "  triple: baseline %.1f -> test %.1f -> after %.1f FPS",
+                row.fpsBefore,
+                row.fpsTest or 0,
+                row.fpsAfter or 0
+              )
+            end
+            if row.baselines then
+              lines[#lines + 1] = "  baselines: " .. fmtNums(row.baselines)
+                .. " | tests: " .. fmtNums(row.tests)
+                .. " | per-test gains: " .. fmtNums(row.gains, true)
+            end
+            if row.baselinePct ~= nil then
+              lines[#lines + 1] = string.format(
+                "  baselines differ %.1f%% (limit %d%%)",
+                row.baselinePct,
+                ns.stats.UNRELIABLE_PCT
+              )
+            end
+            if row.valueFrom ~= nil and row.valueTo ~= nil then
+              lines[#lines + 1] = string.format(
+                "  value: %s -> %s%s",
+                tostring(row.valueFrom),
+                tostring(row.valueTo),
+                row.valueAfter ~= nil and (" -> " .. tostring(row.valueAfter) .. " (restored)") or ""
+              )
+            end
           end
         end
       else
@@ -455,7 +591,7 @@ local function create(parent)
       box:SetWidth(math.max(200, list:GetWidth()))
       box:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", pad, pad + 48)
       Skin.ApplyPanel(box, { base = ns.palette.obsidian, borderAlpha = 0.8 })
-      box:SetFontObject(Skin.Font("small"))
+      Widgets.ApplyEditBoxFont(box, "small")
       box:SetMultiLine(true)
       box:SetText(text)
       box:SetFocus(true)

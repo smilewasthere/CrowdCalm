@@ -21,7 +21,7 @@ local function create(parent)
   local searchText = Widgets.Text(searchBox, "small", L("addons_search"))
   searchText:SetPoint("LEFT", 8, 0)
   Skin.ColorText(searchText, ns.palette.textDim)
-  searchBox:SetFontObject(Skin.Font("small"))
+  Widgets.ApplyEditBoxFont(searchBox, "small")
   searchBox:SetText("")
   searchBox:SetScript("OnEditFocusGained", function()
     searchText:Hide()
@@ -209,6 +209,8 @@ local function create(parent)
 
   local empty = Widgets.EmptyState(frame, L("addons_empty"))
   empty:Hide()
+  local noApi = Widgets.EmptyState(frame, L("addons_no_api"))
+  noApi:Hide()
 
   function frame.applyFilter(query)
     query = (query or ""):lower()
@@ -228,9 +230,15 @@ local function create(parent)
       end
     end
     if #frame.filtered == 0 then
-      empty:Show()
+      local _, rowCount = ns.addonCost.Rows()
+      -- a real client always lists Blizzard addons: zero rows means the
+      -- addon-list API failed on this client (pre.5), not that it is empty
+      local allRows = (rowCount or 0) == 0
+      empty:SetShown(not allRows)
+      noApi:SetShown(allRows)
     else
       empty:Hide()
+      noApi:Hide()
     end
     if list.Refresh then
       list:Refresh()

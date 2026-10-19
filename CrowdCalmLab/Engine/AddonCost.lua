@@ -40,18 +40,59 @@ end
 local function addonNames()
   local out = {}
   local n = 0
-  local okNum, num = pcall(GetNumAddOns)
-  if not okNum or type(num) ~= "number" then
+  local num = (ns.compat and ns.compat.GetNumAddOns and ns.compat.GetNumAddOns()) or 0
+  if type(num) ~= "number" or num <= 0 then
     return out
   end
   for i = 1, num do
-    local ok, name, title = pcall(GetAddOnInfo, i)
-    if ok and type(name) == "string" and name ~= "" then
+    local name, title = ns.compat and ns.compat.GetAddOnInfo and ns.compat.GetAddOnInfo(i)
+    if name then
       n = n + 1
-      out[n] = { name = name, title = (type(title) == "string" and title) or name }
+      out[n] = { idx = i, name = name, title = (type(title) == "string" and title) or name }
     end
   end
   return out
+end
+
+-- pre.5: adaptive C_AddOnProfiler reader. The GetAddOnMetric signature
+-- (addon name vs addon index) is not verifiable from the repo, so both
+-- forms are tried and the working one is cached (docs/VERIFY.md).
+local metricForm = nil -- nil = unknown, "name", "index", false = no API
+local profilerSetupDone = false
+
+local function setupProfilerOnce()
+  if profilerSetupDone then
+    return
+  end
+  profilerSetupDone = true
+  if C_AddOnProfiler and C_AddOnProfiler.SetupProfiler then
+    pcall(C_AddOnProfiler.SetupProfiler)
+  end
+end
+
+local function readMetric(idx, name, metric)
+  if metricForm == false then
+    return nil
+  end
+  setupProfilerOnce()
+  if metricForm ~= "index" then
+    local ok, v = pcall(C_AddOnProfiler.GetAddOnMetric, name, metric)
+    if ok and type(v) == "number" then
+      metricForm = "name"
+      return v
+    end
+  end
+  if metricForm ~= "name" then
+    local ok, v = pcall(C_AddOnProfiler.GetAddOnMetric, idx, metric)
+    if ok and type(v) == "number" then
+      metricForm = "index"
+      return v
+    end
+  end
+  if metricForm == nil then
+    metricForm = false -- both forms failed; stop probing every addon
+  end
+  return nil
 end
 
 function AddonCost.Refresh()
@@ -65,6 +106,7 @@ function AddonCost.Refresh()
     local entry = list[i]
     local row = ensureRow(i)
     rowCount = i
+    row.idx = entry.idx
     row.name = entry.name
     row.title = entry.title
     row.isSelf = (entry.name == ADDON_NAME)
@@ -74,16 +116,13 @@ function AddonCost.Refresh()
     row.over1 = nil
     row.over5 = nil
     if canQuery then
-      local okR, vR = pcall(C_AddOnProfiler.GetAddOnMetric, entry.name, CPU_METRICS[1])
-      local okP, vP = pcall(C_AddOnProfiler.GetAddOnMetric, entry.name, CPU_METRICS[2])
-      local ok1, v1 = pcall(C_AddOnProfiler.GetAddOnMetric, entry.name, CPU_METRICS[3])
-      local ok5, v5 = pcall(C_AddOnProfiler.GetAddOnMetric, entry.name, CPU_METRICS[4])
-      if okR and type(vR) == "number" then
+      local vR = readMetric(entry.idx, entry.name, CPU_METRICS[1])
+      if vR ~= nil then
         row.queryable = true
         row.cpuRecent = vR
-        row.cpuPeak = okP and type(vP) == "number" and vP or nil
-        row.over1 = ok1 and type(v1) == "number" and v1 or nil
-        row.over5 = ok5 and type(v5) == "number" and v5 or nil
+        row.cpuPeak = readMetric(entry.idx, entry.name, CPU_METRICS[2])
+        row.over1 = readMetric(entry.idx, entry.name, CPU_METRICS[3])
+        row.over5 = readMetric(entry.idx, entry.name, CPU_METRICS[4])
       end
     end
   end
@@ -147,6 +186,10 @@ function AddonCost.ScanMemory()
     local ok, mb
     if C_AddOns and C_AddOns.GetAddOnMemoryUsage then
       ok, mb = pcall(C_AddOns.GetAddOnMemoryUsage, row.name)
+      if not (ok and type(mb) == "number") and row.idx then
+        -- some builds take the addon index instead of the name
+        ok, mb = pcall(C_AddOns.GetAddOnMemoryUsage, row.idx)
+      end
     else
       ok, mb = pcall(GetAddOnMemoryUsage, row.name)
     end

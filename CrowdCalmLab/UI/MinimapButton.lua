@@ -58,11 +58,12 @@ local function ensure()
   ring:SetTexture(ns.skin.mediaPath .. "ring.tga")
   ring:SetVertexColor(p.line.r, p.line.g, p.line.b, 0.95)
 
-  -- pre.4: smaller, uncropped square logo centered on the disc
+  -- pre.5: icon back to the original inset (owner: "like before"), still
+  -- the uncropped square logo inside the ring bezel
   local icon = button:CreateTexture(nil, "ARTWORK")
   icon:SetTexture(ns.skin.mediaPath .. "icon.tga")
-  icon:SetPoint("TOPLEFT", 7, -7)
-  icon:SetPoint("BOTTOMRIGHT", -7, 7)
+  icon:SetPoint("TOPLEFT", 5, -5)
+  icon:SetPoint("BOTTOMRIGHT", -5, 5)
   icon:SetTexCoord(0, 1, 0, 1)
 
   local glow = button:CreateTexture(nil, "OVERLAY")

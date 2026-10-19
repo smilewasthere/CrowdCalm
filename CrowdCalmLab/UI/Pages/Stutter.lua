@@ -101,15 +101,33 @@ local function create(parent)
         row.fpsFs:SetPoint("LEFT", row.sevFs, "RIGHT", 60, 0)
         row.zoneFs = Widgets.Text(row, "small", "")
         row.zoneFs:SetPoint("LEFT", row.fpsFs, "RIGHT", 40, 0)
-        row:SetScript("OnClick", function(self)
-          if frame.showDetail and self.currentEntry then
+        -- pre.5: rows are plain Frames; SetScript("OnClick") is Button-only
+        -- and raised "script type not supported by this object" on the
+        -- owner's client (killed the whole list render). Clicks come in
+        -- via OnMouseUp; the HIGHLIGHT layer is a Button feature too, so
+        -- hover is driven by OnEnter/OnLeave here.
+        row:EnableMouse(true)
+        row:SetScript("OnMouseUp", function(self, button)
+          if button == "LeftButton" and frame.showDetail and self.currentEntry then
             frame.showDetail(self.currentEntry)
+            ns.sound.Play("click")
           end
         end)
-        row:EnableMouse(true)
-        local hover = row:CreateTexture(nil, "HIGHLIGHT")
+        row:SetScript("OnEnter", function(self)
+          if self.hover then
+            self.hover:Show()
+          end
+        end)
+        row:SetScript("OnLeave", function(self)
+          if self.hover then
+            self.hover:Hide()
+          end
+        end)
+        local hover = row:CreateTexture(nil, "ARTWORK")
         hover:SetAllPoints()
         hover:SetColorTexture(ns.palette.gold.r, ns.palette.gold.g, ns.palette.gold.b, 0.08)
+        hover:Hide()
+        row.hover = hover
       end
       row.currentEntry = e
       row.timeFs:SetText(formatTime(e.t))

@@ -1,4 +1,4 @@
--- luacheck configuration for CrowdCalm Lab (WoW retail + Forever).
+﻿-- luacheck configuration for CrowdCalm Lab (WoW retail + Forever).
 -- luacheck itself is optional (not installed on every machine); the static
 -- gate is scripts/check-lua.js. Keep this file in sync with the globals the
 -- addon actually uses.
@@ -48,6 +48,9 @@ read_globals = {
   "UpdateAddOnMemoryUsage",
   "GetAddOnMemoryUsage",
   "SetItemRef",
+  -- movement watchdog (Engine/LabRunner.lua, probed at load)
+  "GetUnitSpeed",
+  "GetPlayerFacing",
   -- minimap button (UI/MinimapButton.lua)
   "Minimap",
   "GetCursorPosition",

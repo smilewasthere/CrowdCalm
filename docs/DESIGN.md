@@ -1,4 +1,4 @@
-# DESIGN — CrowdCalm Lab architecture
+﻿# DESIGN â€” CrowdCalm Lab architecture
 
 How the addon is put together, what each layer may do, and every deviation
 from the original brief (section 12 asked for these to be listed, not hidden).
@@ -10,7 +10,7 @@ shared `ns` table (`local ADDON_NAME, ns = ...`):
 
 | Layer | Files | May depend on |
 |---|---|---|
-| Core | `Core/Init.lua` (first — defines `ns.addInit` / `ns.onLogin`), `Events.lua`, `Locale.lua`, `Util.lua`, `Compat.lua` | nothing below |
+| Core | `Core/Init.lua` (first â€” defines `ns.addInit` / `ns.onLogin`), `Events.lua`, `Locale.lua`, `Util.lua`, `Compat.lua` | nothing below |
 | Data | `Data/Palette.lua`, `Data/Settings.lua` | Core |
 | Engine | `Stats`, `Meter`, `Context`, `StutterLog`, `CVarGuard`, `LabRunner`, `AddonCost`, `SelfCheck` | Core, Data |
 | UI | `Skin`, `Widgets`, `MainWindow`, `Compartment`, `Pages/*` | everything above |
@@ -22,7 +22,7 @@ call `ns.ui.RegisterPage` at file scope). `Compartment.lua` loads last so
 ## The `ns` contract
 
 Every file receives the addon namespace table as its second vararg and
-assigns exactly one module key (`ns.util`, `ns.meter`, `ns.ui`, …). The only
+assigns exactly one module key (`ns.util`, `ns.meter`, `ns.ui`, â€¦). The only
 intentional globals are:
 
 - `CrowdCalmLabDB` (SavedVariables)
@@ -53,7 +53,7 @@ intentional globals are:
   acquired through `Util.AcquireTicker` (one ticker per key, refcounted).
   The one exception: the minimap button installs an `OnUpdate` for the
   duration of a drag (mouse-down to mouse-up) to orbit the button around
-  the minimap rim, and removes it on release — no handler runs otherwise.
+  the minimap rim, and removes it on release â€” no handler runs otherwise.
 - The meter runs at 4 Hz only while refcounted (`Acquire`/`Release`:
   window open, a lab test, or the stutter log).
 - The stutter log runs a 1 Hz ticker only while enabled.
@@ -68,7 +68,7 @@ intentional globals are:
   gain/cost pair (`gainColor()` / `costColor()` functions).
 - Fonts prefer Blizzard font objects (`GameFontNormal`, `NumberFontNormal*`)
   with a `CreateFont` fallback using `STANDARD_TEXT_FONT`. The font-size
-  setting overrides the height per FontString only — it never mutates the
+  setting overrides the height per FontString only â€” it never mutates the
   shared Blizzard font objects.
 - 8 px spacing rhythm; 24 px minimum control height; status is never
   conveyed by color alone (every badge carries a word).
@@ -97,16 +97,16 @@ intentional globals are:
    who do have luacheck.
 6. **UI page title overlay omitted.** The rail highlight and banner carry
    the current-page context; a separate per-page title row was cut to keep
-   content area maximal on the 920×600 frame.
+   content area maximal on the 920Ã—600 frame.
 7. **Custom row list has no visible scrollbar.** Widgets.RowList scrolls by
    mouse wheel only (a thin thumb indicator is future work); the client's
    own keyboard focus traversal is left alone.
 8. **Pages build into a pre-sized container** passed by MainWindow
-   (`def.create(container)`), so create-time `GetWidth()` math is valid —
+   (`def.create(container)`), so create-time `GetWidth()` math is valid â€”
    this differs from the brief's "lazy create a frame" phrasing but is
    required for the timeline strip and paragraph wrapping to size correctly.
 9. **Glyph policy (pre.3): UI strings are Latin-1 plus the em dash.** The
-   client font subset draws nothing outside that range — a `→` (U+2192)
+   client font subset draws nothing outside that range â€” a `â†’` (U+2192)
    in the pre.2 Results card rendered as a tofu box (owner screenshot).
    G5 in `scripts/check-lua.js` walks the parsed AST, decodes Lua string
    escapes, and fails on any other code point; comments are exempt (they
@@ -140,6 +140,31 @@ intentional globals are:
     look without page code (pages keep owning their content and hover
     states).
 
+14. **Phase model reworked for stability (pre.5, owner spec).** The brief's
+   single 3-window A-B-A became a plan-driven pipeline: every phase runs
+   [apply/restore] -> 6 s settle -> 4 s warm-up (dropped by
+   `Stats.Begin(ignoreSeconds)`) -> measured sample. Quick = A-B-A;
+   Thorough = A-B-A-B-A-B-A (4 shared baselines, each test measured
+   against the average of its neighbours, median + min..max spread). The
+   reliability limit moved from 10% (pairwise) to 8% over every baseline
+   pair including entry/exit, surfaced as "Not reliable" with the actual
+   percent.
+15. **Settings changes rebuild the whole window (pre.5).** Font size and
+   colorblind colors are baked at build time; instead of re-skinning every
+   widget in place, `UI.ScheduleRebuild()` discards and rebuilds the
+   window after 0.15 s (deferred during runs, page/scale/position
+   restored). Cost: a visible ~1 frame refresh; benefit: one code path
+   that cannot miss a widget.
+16. **Sliders commit on release (pre.5).** `Widgets.Slider.onChange` now
+   fires on mouse-up (or a 0.35 s keyboard debounce), not on every value
+   change -- mid-drag window scaling from the UI-scale slider moved the
+   thumb under the cursor and corrupted the final value. Only Settings
+   uses sliders, so no live-preview caller regressed.
+17. **Caps and movement probes are strictly read-only (pre.5).**
+   `maxfps` / `renderFrameRateCap` / `gxVSync` are read via pcall before
+   each run and never written; `GetUnitSpeed` / `GetPlayerFacing` are
+   probed once at load and degrade to warn-only FPS sampling when absent.
+   Verified by inspection: LabRunner contains no `SetCVar` for those keys.
 ## Testing philosophy
 
 Nothing in this repository has run inside WoW yet, by design (the owner

@@ -33,10 +33,10 @@ function Widgets.Text(parent, sizeKey, text)
   return fs
 end
 
--- muted-aware sound (SOUNDKIT table may be absent on some clients)
+-- muted-aware sound (SOUNDKIT table may be absent on some clients); the
+-- real gate lives in Core/Sound.lua — this just keeps old call sites working
 function Widgets.PlaySound(skit)
-  local db = ns.db
-  if db and db.settings and db.settings.ui and db.settings.ui.muted then
+  if ns.sound and ns.sound.IsMuted and ns.sound.IsMuted() then
     return
   end
   pcall(PlaySound, skit)
@@ -48,11 +48,36 @@ function Widgets.Panel(parent, opts)
   return frame
 end
 
+-- pre.5: EditBoxes never run through Widgets.Text, so the font-size
+-- preference (owner: "font options not working") never reached the search
+-- and report boxes. Bake the multiplier into their font directly.
+function Widgets.ApplyEditBoxFont(box, sizeKey)
+  local font = Skin.Font(sizeKey or "small")
+  local path, height, flags = font:GetFont()
+  if type(path) ~= "string" or type(height) ~= "number" then
+    return
+  end
+  local mult = 1
+  local db = ns.db
+  if db and db.settings and db.settings.ui and db.settings.ui.fontSize then
+    mult = db.settings.ui.fontSize / 14
+  end
+  local ok = pcall(box.SetFont, box, path, math.floor(height * mult + 0.5), flags)
+  return ok
+end
+
 function Widgets.Button(parent, opts)
   local btn = CreateFrame("Button", nil, parent)
   Skin.Button(btn, opts)
   if opts and opts.onClick then
-    btn:SetScript("OnClick", opts.onClick)
+    btn:SetScript("OnClick", function(self, mouseButton, ...)
+      if mouseButton == "LeftButton" or mouseButton == nil then
+        if ns.sound then
+          ns.sound.Play(opts.sound or "click")
+        end
+      end
+      return opts.onClick(self, mouseButton, ...)
+    end)
   end
   return btn
 end
@@ -76,6 +101,9 @@ function Widgets.Checkbox(parent, opts)
     box = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     box:SetChecked(opts.checked and true or false)
     box:SetScript("OnClick", function(self)
+      if ns.sound then
+        ns.sound.Play(self:GetChecked() and "toggleOn" or "toggleOff")
+      end
       if onToggle then
         onToggle(self:GetChecked() and true or false)
       end
@@ -104,6 +132,9 @@ function Widgets.Checkbox(parent, opts)
     box:SetScript("OnClick", function(self)
       self.checked = not self.checked
       apply()
+      if ns.sound then
+        ns.sound.Play(self.checked and "toggleOn" or "toggleOff")
+      end
       if onToggle then
         onToggle(self.checked)
       end
@@ -147,19 +178,89 @@ function Widgets.Slider(parent, opts)
   valueText:SetPoint("LEFT", slider, "RIGHT", 8, 0)
   slider.valueText = valueText
 
+  -- pre.5: apply on release, not mid-drag. The UI-scale slider resizes the
+  -- whole window under the cursor while dragging, which yanks the thumb to a
+  -- new value on release (owner: "UI scale resets when switching pages").
+  -- Mid-drag we only preview the value text; the commit fires on mouse-up,
+  -- or 0.35 s after keyboard changes settle. opts.format renders the text
+  -- (e.g. "%d%%", "%d").
   local guard = false
+  local dragging = false
+  local applyTimer = nil
+  local fmt = opts.format
+  -- commit only actual changes: clicking a slider without moving it must
+  -- not trigger a window rebuild (font slider) or a pointless apply
+  local lastCommitted = opts.value or (opts.min or 0)
   local function showValue(v)
-    valueText:SetText(string.format("%.2f", v))
+    if fmt then
+      valueText:SetText(string.format(fmt, v))
+    else
+      valueText:SetText(string.format("%.2f", v))
+    end
+  end
+  local function commit(v)
+    if applyTimer then
+      applyTimer:Cancel()
+      applyTimer = nil
+    end
+    if v == lastCommitted then
+      return
+    end
+    lastCommitted = v
+    if opts.onChange then
+      opts.onChange(v)
+    end
   end
   slider:SetScript("OnValueChanged", function(_, value)
     if guard then
       return
     end
     showValue(value)
-    if opts.onChange then
-      opts.onChange(value)
+    if dragging then
+      return -- live preview only; commit on release
+    end
+    if applyTimer then
+      applyTimer:Cancel()
+      applyTimer = nil
+    end
+    applyTimer = C_Timer.After(0.35, function()
+      applyTimer = nil
+      commit(value)
+    end)
+  end)
+  slider:SetScript("OnMouseDown", function(self, button)
+    dragging = true
+    if applyTimer then
+      applyTimer:Cancel()
+      applyTimer = nil
     end
   end)
+  slider:SetScript("OnMouseUp", function(self, button)
+    if dragging then
+      dragging = false
+      commit(self:GetValue())
+    end
+  end)
+  slider:HookScript("OnHide", function()
+    -- leaving the page mid-drag: never strand an unapplied value
+    if dragging then
+      dragging = false
+      commit(slider:GetValue())
+    elseif applyTimer then
+      applyTimer:Cancel()
+      applyTimer = nil
+      commit(slider:GetValue())
+    end
+  end)
+  -- programmatic SetValue (OnShow sync) must not fire onChange: callers
+  -- wrap with slider:SetSilentValue / set the silent flag around sync
+  function slider:SetSilentValue(v)
+    guard = true
+    self:SetValue(v)
+    guard = false
+    lastCommitted = v
+    showValue(v)
+  end
   guard = true
   slider:SetValue(opts.value or (opts.min or 0))
   guard = false
@@ -213,6 +314,9 @@ function Widgets.Dropdown(parent, opts)
   local function select(id)
     selectedId = id
     buttonText:SetText(labelFor(id))
+    if ns.sound then
+      ns.sound.Play("click")
+    end
     if opts.onChange then
       opts.onChange(id)
     end

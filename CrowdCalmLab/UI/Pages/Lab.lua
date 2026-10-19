@@ -249,7 +249,13 @@ local function create(parent)
       if not ok then
         ns.ui.ShowBanner(L("err_" .. (err or "noselect")) or tostring(err), "danger", 6)
       else
-        ns.ui.ShowBanner(L("banner_running"), "gold", 6)
+        -- pre.5: a capped FPS/VSync setup outranks the routine banner
+        local caps = ns.lab.caps
+        if caps and caps.warnings and #caps.warnings > 0 then
+          ns.ui.ShowBanner(L("cap_banner"), "costColor", 8)
+        else
+          ns.ui.ShowBanner(L("banner_running"), "gold", 6)
+        end
         if refreshOverlay then
           refreshOverlay() -- cover the page now, not on the next 1 Hz tick
         end
@@ -294,6 +300,17 @@ local function create(parent)
   liveFpsText:SetPoint("TOP", stepText, "BOTTOM", 0, -12)
   local passText = Widgets.Text(overlay, "small", "")
   passText:SetPoint("TOP", liveFpsText, "BOTTOM", 0, -6)
+  -- pre.5: two persistent advisory lines (owner request: keep still during
+  -- the run; read-only cap warning when Max FPS/VSync may limit results)
+  local keepStillText = Widgets.Text(overlay, "small", L("overlay_keep_still"))
+  keepStillText:SetPoint("TOP", passText, "BOTTOM", 0, -10)
+  keepStillText:SetJustifyH("CENTER")
+  Skin.ColorText(keepStillText, ns.palette.textDim)
+  local capText = Widgets.Text(overlay, "small", "")
+  capText:SetPoint("TOP", keepStillText, "BOTTOM", 0, -4)
+  capText:SetJustifyH("CENTER")
+  Skin.ColorText(capText, ns.palette.costColor())
+  capText:Hide()
   local cancelBtn = Widgets.Button(overlay, {
     label = L("cancel_test"),
     primary = true,
@@ -317,6 +334,7 @@ local function create(parent)
   local PHASE_KEYS = {
     sample = "phase_sample",
     settle = "phase_settle",
+    warmup = "phase_warmup",
     applying = "phase_applying",
     restoring = "phase_restoring",
   }
@@ -343,13 +361,31 @@ local function create(parent)
     end
     liveFpsText:SetText(string.format("%.0f FPS", ns.meter.live.fps or 0))
     combatBanner:SetShown(InCombatLockdown())
+    -- persistent cap advisory (read-only preflight of this run)
+    local caps = ns.lab.caps
+    if caps and caps.warnings and #caps.warnings > 0 then
+      local parts = {}
+      for _, w in ipairs(caps.warnings) do
+        if w == "maxfps" then
+          parts[#parts + 1] = Lfmt("cap_maxfps", tostring(caps.maxfps or "?"))
+        elseif w == "vsync" then
+          parts[#parts + 1] = L("cap_vsync")
+        end
+      end
+      capText:SetText(table.concat(parts, " / "))
+      capText:Show()
+    else
+      capText:Hide()
+    end
     if p.phase ~= lastPhase then
       lastPhase = p.phase
       local lab = ns.db.settings.lab
       if p.phase == "sample" then
         ring:Start(lab.sampleSeconds or 8)
       elseif p.phase == "settle" then
-        ring:Start(lab.settleSeconds or 3)
+        ring:Start(lab.settleSeconds or 6)
+      elseif p.phase == "warmup" then
+        ring:Start(lab.ignoreSeconds or 4)
       else
         ring:Stop()
       end

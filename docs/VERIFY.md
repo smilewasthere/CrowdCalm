@@ -186,3 +186,59 @@ note the result in this file (or tell the addon author).
     button still sits on the minimap rim (it re-anchors on resize).
 39. **Do lists show zebra stripes?** Stutter, Results and Settings row
     lists must alternate subtle darker/even rows.
+
+## pre.5 stability + fixes items
+
+40. **Stutter log opens without errors.** Open the Stutter page on
+    12.1.5 with logging history present: no "script type not supported"
+    error, rows render, hovering a row tints it gold, and clicking a row
+    opens the detail popup.
+41. **Addons page fills itself again.** Open it fresh (not in combat):
+    rows appear within a second with names and CPU columns; "Refresh CPU"
+    and "Scan memory" work. If this client's addon-list API is missing,
+    the page shows "Addon list API unavailable on this client." in the
+    middle instead of "No addons found."
+42. **Font size and colorblind actually change the UI.** In Settings,
+    move Font size from 14 to 18: within ~0.2 s the window rebuilds,
+    shows "Setting applied — the window refreshed.", keeps its position,
+    scale and current page, and all page text (including the Addons
+    search box and the report box) is larger. Toggling Colorblind does
+    the same and the colors are visibly different immediately.
+43. **UI scale holds while you drag.** Drag the scale slider from 100%
+    toward 140%: the thumb tracks the cursor the whole way (no jump at
+    the end), the window resizes once on release, and the value reads
+    like "140%". Keyboard arrows apply about 0.35 s after the last press.
+    Both values survive `/reload`.
+44. **Sounds play and Mute works.** Buttons, checkbox toggles and
+    dropdown picks make a short sound. Checking Mute silences the next
+    interaction; unmuting plays one confirming click. Sound Settings
+    volume sliders still apply (SFX channel).
+45. **Header FPS panel.** Top right shows a chip with dot + number +
+    "FPS"; hovering explains it, clicking it opens the Overview page.
+    The client chip sits to its left without touching it.
+46. **Overlay phases and estimate.** Start a Quick run: per setting you
+    see Stabilizing (6 s countdown), Warming up (4 s), then Sampling;
+    "Phase x of y" counts 1..3 (Quick) or 1..7 (Thorough). The
+    keep-still line is visible the whole run, and the "About ..." estimate
+    roughly matches wall-clock time (about 57 s per setting Quick,
+    about 133 s Thorough with default timings).
+47. **Not reliable cards.** Force noise (walk around a little between
+    phases) until baselines diverge over 8%: the chip reads "Not
+    reliable", the card shows "Baseline difference: X% (over the 8%
+    limit)" plus "Stand still, don't touch the mouse, and re-run", and
+    Copy report lines end with NOT RELIABLE plus a baselines-differ
+    percentage line. Steady runs show the Thorough spread line instead
+    ("Per-test gains: +A to +B").
+48. **Caps preflight is read-only.** With `/console maxfps 64` (or VSync
+    on): starting a run shows the cap banner, a cap line stays on the
+    overlay, and the report starts with a Caps: line. After the run,
+    `maxfps` still reads 64 — the addon never wrote it. With the cap
+    removed, none of these appear.
+49. **Movement warning.** Walk or turn the camera during a run: a
+    "Movement detected" banner appears once, affected cards show
+    "Movement during this test — treat with care.", and the report
+    contains a run-level WARNING plus per-row MOVED flags.
+50. **Report triples.** Copy report rows include the FPS triple
+    ("triple: baseline -> test -> after"), baselines/tests/per-test-gains
+    lists, and a value line ending "(restored)" when the read-back
+    landed.
