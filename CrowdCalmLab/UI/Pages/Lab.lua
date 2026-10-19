@@ -161,11 +161,13 @@ local function create(parent)
 
   local refreshRunButton -- forward-declared; defined below the controls
   local refreshOverlay -- forward-declared so Run/Cancel can refresh instantly
+  local combineBox -- forward-declared; syncTileVisuals keeps its face truthful
   local tileCache = {} -- cand.id -> tile (bounded pool; review I9)
   local COLS = 2 -- pre.6: two tiles per row
 
   -- pre.6: one refresh keeps every checkbox and accent strip truthful after
-  -- any programmatic selection change ("Test only" flips the whole grid)
+  -- any programmatic selection change ("Test only" flips the whole grid,
+  -- including the combine toggle, which lives outside the tile cache)
   local function syncTileVisuals()
     for id, tile in pairs(tileCache) do
       local sel = ns.db.selection[id] and true or false
@@ -175,6 +177,9 @@ local function create(parent)
       if tile.accent then
         tile.accent:SetShown(sel)
       end
+    end
+    if combineBox then
+      combineBox:SetChecked(ns.db.selection["__combine__"] and true or false)
     end
   end
 
@@ -241,7 +246,7 @@ local function create(parent)
   local controlsBg = Widgets.Panel(controls, { base = ns.palette.obsidian, borderAlpha = 0.45 })
   controlsBg:SetAllPoints(controls)
 
-  local combineBox = Widgets.Checkbox(controls, {
+  combineBox = Widgets.Checkbox(controls, {
     label = L("combine_top"),
     checked = ns.db.selection["__combine__"] and true or false,
     onToggle = function(checked)
