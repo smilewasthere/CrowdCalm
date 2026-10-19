@@ -80,18 +80,27 @@ local function create(parent)
   sortLabel:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -pad, -pad - 4)
   Skin.ColorText(sortLabel, ns.palette.textDim)
 
-  -- column headers (click to sort)
+  -- column headers (click to sort): ghost/text-only buttons; the active
+  -- column is gold (pre.4 restyle, replaces the flat bordered headers)
   local headerY = -pad - 36
   local headers = { { "col_addon", "name" }, { "col_cpu", "cpu" }, { "col_memory", "memory" } }
   local headerXs = { pad, pad + 320, pad + 420 }
   local sortField = "cpu"
+  local headerBtns = {}
+  local function refreshHeaders()
+    for i, btn in ipairs(headerBtns) do
+      Skin.SetGhostActive(btn, headers[i][2] == sortField)
+    end
+  end
   for i, h in ipairs(headers) do
     local btn = Widgets.Button(frame, {
       small = true,
+      ghost = true,
       label = L(h[1]),
       onClick = function()
         sortField = h[2]
         ns.addonCost.SortBy(sortField)
+        refreshHeaders()
         if frame.refresh then
           frame.refresh()
         end
@@ -100,7 +109,9 @@ local function create(parent)
     btn:SetWidth(90)
     btn:SetHeight(20)
     btn:SetPoint("TOPLEFT", frame, "TOPLEFT", headerXs[i], headerY)
+    headerBtns[i] = btn
   end
+  refreshHeaders()
 
   local caveat = Widgets.Text(frame, "small", L("cpu_caveat"))
   caveat:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, headerY - 24)

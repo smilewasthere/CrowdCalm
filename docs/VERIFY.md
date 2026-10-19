@@ -157,7 +157,32 @@ note the result in this file (or tell the addon author).
     the change line (older saves have no stored values).
 33. **Does the Addons page fill itself?** Open it fresh (not in combat):
     the list should populate within a second without clicking anything,
-    and the top-right label should read "N addons · sorted by CPU".
+    and the top-right label should read "N addons ... sorted by CPU".
     If opened during combat, it must fill itself automatically when
     combat ends. The "No addons found." icon must sit in the middle of
     the page, not over the caveat text.
+
+## pre.4 visual-refresh items
+
+34. **Does the crowd gauge read as a clean semicircle?** On Overview,
+    the "Crowd right now" card must show a smooth arc band (no visible
+    square tile segments), with a Quiet label to the left of the dome,
+    a Packed label to the right, and the zone line above the band --
+    never on it. The fill must be green (Quiet), gold (Busy) or orange
+    (Packed); with colorblind mode on it must swap to that palette.
+35. **Do buttons show gradient faces and outlines?** Every button in
+    the window now has a generated dark gradient face and a 1px
+    outline; Run Lab / Start / Restore wear the gold face with a dark
+    label and keep the hover glow.
+36. **Is Quick / Thorough a segmented control?** The active mode wears
+    the gold face immediately on click (no need to wait a tick), the
+    inactive one stays dark, and the choice survives `/reload`.
+37. **Are the Addons sort headers ghost style?** The three column
+    headers are text-only (no button face) and the active sort column
+    is gold; clicking another header moves the gold.
+38. **Does the minimap button look refreshed?** The logo is a smaller
+    uncropped square centered on the disc, the bezel is one thin ring
+    (no 12 visible blocks), and after changing UI scale or reload the
+    button still sits on the minimap rim (it re-anchors on resize).
+39. **Do lists show zebra stripes?** Stutter, Results and Settings row
+    lists must alternate subtle darker/even rows.

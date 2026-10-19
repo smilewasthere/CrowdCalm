@@ -94,6 +94,29 @@ end
 
 -- ----------------------------------------------------------- panels ----
 
+-- 1 px inner outline: four corner-anchored edge textures so it follows
+-- resizes. Shared by panels and buttons (pre.4).
+function Skin.DrawEdges(frame, border, alpha)
+  local function hEdge(topPoint, bottomPoint)
+    local tex = frame:CreateTexture(nil, "BORDER")
+    tex:SetColorTexture(border.r, border.g, border.b, alpha)
+    tex:SetPoint(topPoint)
+    tex:SetPoint(bottomPoint)
+    tex:SetHeight(1)
+  end
+  local function vEdge(leftPoint, rightPoint)
+    local tex = frame:CreateTexture(nil, "BORDER")
+    tex:SetColorTexture(border.r, border.g, border.b, alpha)
+    tex:SetPoint(leftPoint)
+    tex:SetPoint(rightPoint)
+    tex:SetWidth(1)
+  end
+  hEdge("TOPLEFT", "TOPRIGHT")
+  hEdge("BOTTOMLEFT", "BOTTOMRIGHT")
+  vEdge("TOPLEFT", "BOTTOMLEFT")
+  vEdge("TOPRIGHT", "BOTTOMRIGHT")
+end
+
 -- Creates the base surface: colored fill on a BACKGROUND texture (frames
 -- have no SetColorTexture — review C1), 1 px bronze border anchored to the
 -- corners so it follows resizes, optional vignette overlay.
@@ -107,29 +130,7 @@ function Skin.ApplyPanel(frame, opts)
   fill:SetAllPoints()
   fill:SetColorTexture(base.r, base.g, base.b, alpha)
 
-  -- 1 px inner border (four thin edge textures, corner-anchored so they
-  -- follow resizes)
-  local border = opts.border or p.line
-  local function hEdge(topPoint, bottomPoint)
-    local tex = frame:CreateTexture(nil, "BORDER")
-    tex:SetColorTexture(border.r, border.g, border.b, opts.borderAlpha or 0.9)
-    tex:SetPoint(topPoint)
-    tex:SetPoint(bottomPoint)
-    tex:SetHeight(1)
-    return tex
-  end
-  local function vEdge(leftPoint, rightPoint)
-    local tex = frame:CreateTexture(nil, "BORDER")
-    tex:SetColorTexture(border.r, border.g, border.b, opts.borderAlpha or 0.9)
-    tex:SetPoint(leftPoint)
-    tex:SetPoint(rightPoint)
-    tex:SetWidth(1)
-    return tex
-  end
-  hEdge("TOPLEFT", "TOPRIGHT")
-  hEdge("BOTTOMLEFT", "BOTTOMRIGHT")
-  vEdge("TOPLEFT", "BOTTOMLEFT")
-  vEdge("TOPRIGHT", "BOTTOMRIGHT")
+  Skin.DrawEdges(frame, opts.border or p.line, opts.borderAlpha or 0.9)
 
   if opts.vignette then
     local vign = frame:CreateTexture(nil, "ARTWORK")
@@ -157,14 +158,41 @@ end
 -- ---------------------------------------------------------- buttons ----
 
 -- Custom button with four states, shimmer sweep on hover for primary.
+-- pre.4: generated gradient faces (btn_dark/btn_gold) replace the flat
+-- raised block; every button gets a 1 px outline; opts.ghost renders a
+-- text-only header button (Addons column headers).
 function Skin.Button(btn, opts)
   opts = opts or {}
   local p = ns.palette
   btn:SetHeight(opts.height or 28)
+
+  if opts.ghost then
+    local glabel = btn:CreateFontString(nil, "OVERLAY")
+    glabel:SetFontObject(Skin.Font(opts.small and "small" or "body"))
+    glabel:SetTextColor(p.text.r, p.text.g, p.text.b, 1)
+    glabel:SetPoint("CENTER")
+    glabel:SetText(opts.label or "")
+    btn.text = glabel
+    btn.isGhost = true
+    btn:HookScript("OnEnter", function()
+      Skin.ColorText(glabel, p.goldBright)
+    end)
+    btn:HookScript("OnLeave", function()
+      if not btn.ghostActive then
+        Skin.ColorText(glabel, p.text)
+      end
+    end)
+    return btn
+  end
+
   local normal = btn:CreateTexture(nil, "ARTWORK")
   normal:SetAllPoints()
-  normal:SetColorTexture(p.raised.r, p.raised.g, p.raised.b, 1)
+  normal:SetTexture(MEDIA .. (opts.primary and "btn_gold.tga" or "btn_dark.tga"))
   btn:SetNormalTexture(normal)
+  btn.normalTexture = normal
+  btn.isPrimary = opts.primary and true or false
+
+  Skin.DrawEdges(btn, p.line, 0.85)
 
   local hover = btn:CreateTexture(nil, "ARTWORK")
   hover:SetAllPoints()
@@ -177,13 +205,6 @@ function Skin.Button(btn, opts)
   pressed:SetColorTexture(p.obsidian.r, p.obsidian.g, p.obsidian.b, 0.5)
   pressed:Hide()
   btn:SetPushedTexture(pressed)
-
-  local borderTex = btn:CreateTexture(nil, "BORDER")
-  borderTex:SetColorTexture(p.line.r, p.line.g, p.line.b, 1)
-  borderTex:SetPoint("TOPLEFT", 0, 0)
-  borderTex:SetPoint("BOTTOMRIGHT", 0, 0)
-  borderTex:Hide()
-  btn.borderTexture = borderTex
 
   if opts.primary then
     local glow = btn:CreateTexture(nil, "OVERLAY")
@@ -232,7 +253,12 @@ function Skin.Button(btn, opts)
 
   local label = btn:CreateFontString(nil, "OVERLAY")
   label:SetFontObject(Skin.Font(opts.small and "small" or "body"))
-  label:SetTextColor(ns.palette.text.r, ns.palette.text.g, ns.palette.text.b, 1)
+  -- dark label on the gold face reads as one solid CTA (pre.4)
+  if opts.primary then
+    label:SetTextColor(p.obsidian.r, p.obsidian.g, p.obsidian.b, 1)
+  else
+    label:SetTextColor(p.text.r, p.text.g, p.text.b, 1)
+  end
   label:SetPoint("CENTER")
   label:SetText(opts.label or "")
   btn.text = label
@@ -243,10 +269,50 @@ function Skin.Button(btn, opts)
     normal:SetVertexColor(0.5, 0.5, 0.5, 0.6)
   end)
   btn:HookScript("OnEnable", function(self)
-    label:SetTextColor(ns.palette.text.r, ns.palette.text.g, ns.palette.text.b, 1)
+    if btn.isPrimary then
+      label:SetTextColor(p.obsidian.r, p.obsidian.g, p.obsidian.b, 1)
+    else
+      label:SetTextColor(p.text.r, p.text.g, p.text.b, 1)
+    end
     normal:SetVertexColor(1, 1, 1, 1)
   end)
   return btn
+end
+
+-- Segmented-control look (pre.4 Lab Quick/Thorough): swap the face
+-- between the gold and the dark gradient and adjust the label contrast.
+function Skin.SetButtonPrimary(btn, primary)
+  if not btn or btn.isGhost or not btn.normalTexture then
+    return
+  end
+  primary = primary and true or false
+  if btn.isPrimary == primary then
+    return
+  end
+  btn.isPrimary = primary
+  btn.normalTexture:SetTexture(MEDIA .. (primary and "btn_gold.tga" or "btn_dark.tga"))
+  if btn.text then
+    local p = ns.palette
+    if primary then
+      btn.text:SetTextColor(p.obsidian.r, p.obsidian.g, p.obsidian.b, 1)
+    else
+      btn.text:SetTextColor(p.text.r, p.text.g, p.text.b, 1)
+    end
+  end
+end
+
+-- Ghost-button active state (pre.4 Addons sort headers): goldBright text
+-- while active, default text otherwise (hover still previews gold).
+function Skin.SetGhostActive(btn, active)
+  if not btn or not btn.isGhost or not btn.text then
+    return
+  end
+  btn.ghostActive = active and true or false
+  if btn.ghostActive then
+    Skin.ColorText(btn.text, ns.palette.goldBright)
+  else
+    Skin.ColorText(btn.text, ns.palette.text)
+  end
 end
 
 -- colorize a font string to a palette entry

@@ -1,9 +1,9 @@
 -- UI/MinimapButton.lua — draggable minimap button (owner request for
--- pre.2): 32px disc with the addon logo, a 12-segment arc.tga bezel
--- (same geometry family as Widgets.ArcGauge; no new assets), and a hover
--- glow. Left-click toggles the window; dragging orbits it around the
--- minimap rim. OnUpdate exists ONLY while the button is held (disclosed
--- in DESIGN.md); otherwise zero idle cost. Preference:
+-- pre.2): 32px disc with a small square addon logo and a ring.tga bezel
+-- (pre.4: one generated ring replaces the 12 rotated arc segments), plus
+-- a hover glow. Left-click toggles the window; dragging orbits it around
+-- the minimap rim. OnUpdate exists ONLY while the button is held
+-- (disclosed in DESIGN.md); otherwise zero idle cost. Preference:
 -- settings.ui.minimapButton (default on), angle: ui.minimapAngle.
 local ADDON_NAME, ns = ...
 
@@ -51,24 +51,19 @@ local function ensure()
   bg:SetAllPoints()
   bg:SetColorTexture(p.obsidian.r, p.obsidian.g, p.obsidian.b, 0.85)
 
-  -- 12 tangential arc segments = the bezel ring. Sizes mirror
-  -- Widgets.ArcGauge scaled to this radius (tangential ~8, thickness
-  -- ~radius/4, rotation angle - pi/2).
-  for i = 1, 12 do
-    local seg = button:CreateTexture(nil, "ARTWORK")
-    seg:SetTexture(ns.skin.mediaPath .. "arc.tga")
-    seg:SetSize(8, 4)
-    local angle = (i / 12) * 2 * math.pi
-    seg:SetPoint("CENTER", button, "CENTER", math.cos(angle) * 15, math.sin(angle) * 15)
-    pcall(seg.SetRotation, seg, angle - math.pi / 2)
-    seg:SetVertexColor(p.line.r, p.line.g, p.line.b, 0.9)
-  end
+  -- pre.4: one generated ring texture is the bezel (the old design
+  -- stacked 12 rotated arc segments around the rim)
+  local ring = button:CreateTexture(nil, "ARTWORK")
+  ring:SetAllPoints()
+  ring:SetTexture(ns.skin.mediaPath .. "ring.tga")
+  ring:SetVertexColor(p.line.r, p.line.g, p.line.b, 0.95)
 
+  -- pre.4: smaller, uncropped square logo centered on the disc
   local icon = button:CreateTexture(nil, "ARTWORK")
   icon:SetTexture(ns.skin.mediaPath .. "icon.tga")
-  icon:SetPoint("TOPLEFT", 5, -5)
-  icon:SetPoint("BOTTOMRIGHT", -5, 5)
-  icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  icon:SetPoint("TOPLEFT", 7, -7)
+  icon:SetPoint("BOTTOMRIGHT", -7, 7)
+  icon:SetTexCoord(0, 1, 0, 1)
 
   local glow = button:CreateTexture(nil, "OVERLAY")
   glow:SetAllPoints()
@@ -108,6 +103,13 @@ local function ensure()
   end)
 
   position()
+
+  -- pre.4: follow the minimap when it resizes (UI scale, tracking
+  -- options, other addons); HookScript stacks, so guard for one hook
+  if not minimapButton._sizeHooked then
+    minimapButton._sizeHooked = true
+    Minimap:HookScript("OnSizeChanged", position)
+  end
 end
 
 -- Called at PLAYER_LOGIN and from the Settings checkbox.

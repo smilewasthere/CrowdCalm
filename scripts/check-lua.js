@@ -86,6 +86,14 @@ const MEDIA_MANIFEST = [
   "icon_addons.tga",
   "icon_settings.tga",
   "icon_about.tga",
+  // pre.4 chrome
+  "btn_dark.tga",
+  "btn_gold.tga",
+  "ring.tga",
+  "gauge_dim.tga",
+  "gauge_q.tga",
+  "gauge_b.tga",
+  "gauge_p.tga",
 ];
 const MEDIA_MAX_BYTES = 1024 * 1024; // 1 MB total budget
 

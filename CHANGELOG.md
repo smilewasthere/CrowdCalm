@@ -19,6 +19,38 @@ All notable changes to CrowdCalm Lab are documented here.
   `scripts/check-lua.js` (static syntax/TOC gate).
 - Docs: `docs/VERIFY.md`, `docs/FIRST-RUN-CHECKLIST.md`, `docs/DESIGN.md`.
 
+## 1.0.0-pre.4 (2026-10-19)
+
+### Changed
+
+- **Visual refresh across the window** (owner feedback):
+  - Buttons now wear generated gradient faces (`btn_dark.tga`,
+    `btn_gold.tga`) with a 1 px outline instead of the flat raised
+    block. Primary CTAs (Run Lab, Start/Save test, Restore) show the
+    gold face with a dark label.
+  - **Quick / Thorough is a segmented control**: the active mode wears
+    the gold face, the inactive one stays on the dark gradient.
+  - **Addons column headers are ghost buttons** (text only); the active
+    sort column is gold.
+- **Crowd gauge v2 (Overview):** a clean semicircle drawn from
+  generated art (`gauge_dim.tga` plus one baked mask per state) replaces
+  the 40 rotated segments -- no rotation API, nothing to pcall. The lit
+  arc ramps quiet = gain green, busy = gold, packed = cost orange (still
+  swapped by colorblind mode), with Quiet / Packed end labels beside
+  the dome. The zone line no longer sits on top of the arc.
+- **Row lists have zebra stripes** (Stutter, Results, Settings); the
+  Stutter timeline strip got a hairline border.
+- **Minimap button** (owner request): smaller uncropped square logo on
+  the disc, one generated `ring.tga` bezel replaces the 12 rotated arc
+  segments, and the button re-anchors automatically when the minimap
+  resizes (UI scale, tracking options, other addons).
+
+### Added
+
+- Seven generated textures (`make-textures.py`): button gradients, the
+  bezel ring, and the four gauge layers; all committed and counted by
+  the media manifest gate (22 files, well under the 1 MB budget).
+
 ## 1.0.0-pre.3 (2026-10-19)
 
 ### Added

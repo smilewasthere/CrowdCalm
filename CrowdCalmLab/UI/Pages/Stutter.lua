@@ -65,6 +65,7 @@ local function create(parent)
   local tlBg = timeline:CreateTexture(nil, "BACKGROUND")
   tlBg:SetAllPoints()
   tlBg:SetColorTexture(ns.palette.obsidian.r, ns.palette.obsidian.g, ns.palette.obsidian.b, 1)
+  Skin.DrawEdges(timeline, ns.palette.line, 0.5)
   local columns = {}
   local COLS = 60
   for i = 1, COLS do

@@ -215,8 +215,10 @@ local function create(parent)
   local quickBtn, thoroughBtn
   local function applyMode()
     ns.db.settings.lab.defaultMode = mode
-    Skin.ColorText(quickBtn.text, mode == "quick" and ns.palette.goldBright or ns.palette.text)
-    Skin.ColorText(thoroughBtn.text, mode == "thorough" and ns.palette.goldBright or ns.palette.text)
+    -- segmented look (pre.4): active mode wears the gold face, inactive
+    -- stays on the dark gradient
+    Skin.SetButtonPrimary(quickBtn, mode == "quick")
+    Skin.SetButtonPrimary(thoroughBtn, mode == "thorough")
     refreshRunButton()
   end
   quickBtn = Widgets.Button(controls, {

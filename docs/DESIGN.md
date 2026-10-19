@@ -125,6 +125,21 @@ intentional globals are:
     row at run time; rows from older saves simply lack them and the UI
     degrades to FPS-only sentences.
 
+12. **Gauge and button art is generated, never rotated (pre.4).** The
+    40-segment arc gauge used `SetRotation` on tile textures; the
+    minimap bezel stacked 12 rotated segments. Both are now single
+    generated textures: `gauge_dim.tga` plus baked 25/60/95% left-fill
+    masks (`gauge_q/b/p.tga`) for the gauge, `ring.tga` for the bezel,
+    `btn_dark/btn_gold.tga` gradients for buttons. Layers are tinted at
+    runtime with palette functions, so colorblind mode swaps still
+    apply; the semantic ramp (quiet = gain, busy = gold, packed = cost)
+    mirrors the old segment colors.
+13. **Zebra stripes painted by RowList, not by each page.** Pooled rows
+    carry one BACKGROUND texture and RowList sets its alpha by index
+    parity at layout time, so Stutter, Results and Settings inherit the
+    look without page code (pages keep owning their content and hover
+    states).
+
 ## Testing philosophy
 
 Nothing in this repository has run inside WoW yet, by design (the owner

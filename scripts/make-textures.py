@@ -123,6 +123,83 @@ def make_arc() -> None:
     save(img, "arc.tga")
 
 
+# ------------------------------------------------ pre.4 chrome textures ----
+
+
+def _vgrad(w: int, h: int, top, bottom) -> Image.Image:
+    """Vertical gradient fill (top/bottom are RGB tuples)."""
+    img = Image.new("RGBA", (w, h))
+    px = img.load()
+    denom = max(1, h - 1)
+    for y in range(h):
+        t = y / denom
+        r = int(top[0] + (bottom[0] - top[0]) * t)
+        g = int(top[1] + (bottom[1] - top[1]) * t)
+        b = int(top[2] + (bottom[2] - top[2]) * t)
+        for x in range(w):
+            px[x, y] = (r, g, b, 255)
+    return img
+
+
+def make_buttons() -> None:
+    """Button face gradients (Skin.Button stretches these over any size)."""
+    save(_vgrad(32, 32, (44, 49, 60), (14, 16, 21)), "btn_dark.tga")
+    save(_vgrad(32, 32, (242, 214, 130), (146, 112, 44)), "btn_gold.tga")
+
+
+def make_ring() -> None:
+    """Smooth circle outline (minimap bezel, 64px, soft 3px edge)."""
+    size = 64
+    radius = 29.0
+    half = 1.7
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    px = img.load()
+    c = size / 2.0
+    for y in range(size):
+        for x in range(size):
+            d = math.hypot(x + 0.5 - c, y + 0.5 - c)
+            a = max(0.0, min(1.0, 1.0 - abs(d - radius) / half))
+            px[x, y] = (255, 255, 255, int((a**0.9) * 235))
+    save(img, "ring.tga")
+
+
+def _gauge_band(fill_frac: float) -> Image.Image:
+    """Upper-half annulus band, centered on the bottom edge; the left
+    `fill_frac` of the arc (from 180 deg leftward toward 0 deg) is opaque,
+    the rest transparent. White RGB so Skin tints it at runtime (the lit
+    layer uses gainColor, the dim layer line color — colorblind safe).
+    128x64 keeps four states inside the 1 MB media budget."""
+    w, h = 128, 64
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    px = img.load()
+    cx, cy = w / 2.0, h - 1.0
+    r_out = w * 0.485  # 62 px
+    r_in = r_out - 10.0
+    fill_from = math.pi * (1.0 - max(0.0, min(1.0, fill_frac)))
+    for y in range(h):
+        for x in range(w):
+            dx = x + 0.5 - cx
+            dy = y + 0.5 - cy
+            d = math.hypot(dx, dy)
+            cov = max(0.0, min(1.0, min(d - (r_in - 0.5), (r_out + 0.5) - d)))
+            if cov <= 0.0 or dy > 0.5:  # upper half only
+                continue
+            angle = math.atan2(-dy, dx)
+            if angle + 1e-9 < fill_from:
+                continue
+            px[x, y] = (255, 255, 255, int(cov * 255))
+    return img
+
+
+def make_gauges() -> None:
+    """Overview crowd gauge states: one dim full band + three lit masks
+    (quiet 25%, busy 60%, packed 95% filled from the left)."""
+    save(_gauge_band(1.0), "gauge_dim.tga")
+    save(_gauge_band(0.25), "gauge_q.tga")
+    save(_gauge_band(0.60), "gauge_b.tga")
+    save(_gauge_band(0.95), "gauge_p.tga")
+
+
 def _load_font(size: int):
     for candidate in (
         "C:/Windows/Fonts/frizquadrata.ttf",
@@ -185,6 +262,9 @@ def main() -> None:
     make_arc()
     make_emblem()
     make_icon()
+    make_buttons()
+    make_ring()
+    make_gauges()
     for name, letter in RAIL_TILES.items():
         save(_letter_tile(32, letter, PANEL, GOLD), name)
     print("done.")

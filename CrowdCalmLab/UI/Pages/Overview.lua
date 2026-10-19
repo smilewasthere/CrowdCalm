@@ -47,8 +47,18 @@ local function create(parent)
 
   local crowdCard = heroCard(frame, cardW, "hero_crowd_title")
   crowdCard:SetPoint("TOPLEFT", frameCard, "TOPRIGHT", 12, 0)
-  local gauge = Widgets.ArcGauge(crowdCard, 150)
-  gauge:SetPoint("BOTTOM", crowdCard, "BOTTOM", 0, 8)
+  -- pre.4: gauge keeps the arc clear of the zone line (gauge top edge
+  -- sits at y49 of the 120 px card; zone ends at y44)
+  local gauge = Widgets.ArcGauge(crowdCard, 130)
+  gauge:SetPoint("BOTTOM", crowdCard, "BOTTOM", 0, 6)
+  -- Quiet/Packed end labels sit in the two empty corners of the
+  -- semicircle rect, beside the dome, never on the band
+  local qLab = Widgets.Text(crowdCard, "small", L("crowd_quiet"))
+  qLab:SetPoint("TOPLEFT", gauge, "TOPLEFT", 2, -1)
+  Skin.ColorText(qLab, ns.palette.textDim)
+  local pLab = Widgets.Text(crowdCard, "small", L("crowd_packed"))
+  pLab:SetPoint("TOPRIGHT", gauge, "TOPRIGHT", -2, -1)
+  Skin.ColorText(pLab, ns.palette.textDim)
   local zoneText = Widgets.Text(crowdCard, "small", "")
   zoneText:SetPoint("TOP", crowdCard.title, "BOTTOM", 0, -6)
   local whyBtn = Widgets.Button(crowdCard, {

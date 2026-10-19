@@ -485,25 +485,28 @@ end
 
 -- -------------------------------------------------------- arc gauge ----
 
-local ARC_SEGMENTS = 40
-
+-- pre.4: clean semicircle band drawn from generated art — one dim track
+-- (gauge_dim.tga) plus a lit mask baked at 25/60/95% of the arc
+-- (gauge_q/b/p.tga). No SetRotation, no atlas, nothing to pcall; the
+-- layers are tinted at runtime, so colorblind mode swaps with them.
 function Widgets.ArcGauge(parent, size)
   size = size or 160
   local frame = CreateFrame("Frame", nil, parent)
-  frame:SetSize(size, size / 2 + 8)
-  local segs = {}
-  local radius = size / 2 - 8
-  local cx, cy = size / 2, size / 2
-  for i = 1, ARC_SEGMENTS do
-    local seg = frame:CreateTexture(nil, "ARTWORK")
-    seg:SetTexture(ns.skin.mediaPath .. "arc.tga")
-    local angle = math.pi * (1 - (i - 1) / (ARC_SEGMENTS - 1)) -- pi..0
-    seg:SetSize(8, 18)
-    seg:SetPoint("CENTER", frame, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
-    pcall(seg.SetRotation, seg, angle - math.pi / 2)
-    segs[i] = seg
-  end
-  frame.value = -1 -- sentinel so the first SetValue(0) paints (review M3)
+  frame:SetSize(size, size / 2)
+  frame:EnableMouse(true)
+
+  local dim = frame:CreateTexture(nil, "ARTWORK")
+  dim:SetAllPoints()
+  dim:SetTexture(ns.skin.mediaPath .. "gauge_dim.tga")
+  local line = ns.palette.line
+  dim:SetVertexColor(line.r, line.g, line.b, 0.55)
+
+  local lit = frame:CreateTexture(nil, "ARTWORK")
+  lit:SetAllPoints()
+  lit:SetTexture(ns.skin.mediaPath .. "gauge_q.tga")
+
+  local MASKS = { "gauge_q.tga", "gauge_b.tga", "gauge_p.tga" }
+  frame.value = -1 -- sentinel so the first SetValue paints (review M3)
 
   function frame:SetValue(v)
     v = math.max(0, math.min(1, v or 0))
@@ -511,24 +514,13 @@ function Widgets.ArcGauge(parent, size)
       return
     end
     frame.value = v
-    local lit = math.floor(v * ARC_SEGMENTS + 0.5)
-    local gain = ns.palette.gainColor()
-    local line = ns.palette.line
-    local cost = ns.palette.costColor()
-    for i = 1, ARC_SEGMENTS do
-      local seg = segs[i]
-      if i <= lit then
-        local c = (i > ARC_SEGMENTS - 5) and cost or gain
-        seg:SetVertexColor(c.r, c.g, c.b, 1)
-        seg:Show()
-      else
-        seg:SetVertexColor(line.r, line.g, line.b, 0.8)
-        seg:Show()
-      end
-    end
+    local idx = (v < 0.425) and 1 or (v < 0.775 and 2 or 3)
+    lit:SetTexture(ns.skin.mediaPath .. MASKS[idx])
+    -- semantic ramp: quiet = gain green, busy = gold, packed = cost
+    local c = idx == 1 and ns.palette.gainColor() or (idx == 2 and ns.palette.gold or ns.palette.costColor())
+    lit:SetVertexColor(c.r, c.g, c.b, 1)
   end
 
-  frame:SetValue(0)
   return frame
 end
 
@@ -622,7 +614,14 @@ function Widgets.RowList(parent, opts)
     local n = total()
     local visible = math.min(math.floor(container:GetHeight() / rowHeight), n)
     while #rows < visible do
-      rows[#rows + 1] = pool:Acquire()
+      local row = pool:Acquire()
+      if not row.zebra then
+        -- pre.4 look pass: every pooled row gets a BACKGROUND layer for
+        -- alternating stripes (set per index below)
+        row.zebra = row:CreateTexture(nil, "BACKGROUND")
+        row.zebra:SetAllPoints()
+      end
+      rows[#rows + 1] = row
     end
     while #rows > visible do
       pool:Release(table.remove(rows))
@@ -635,6 +634,12 @@ function Widgets.RowList(parent, opts)
       row:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -((i - 1) * rowHeight))
       row:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, -((i - 1) * rowHeight))
       if index <= n then
+        local ob = ns.palette.obsidian
+        if index % 2 == 0 then
+          row.zebra:SetColorTexture(ob.r, ob.g, ob.b, 0.35)
+        else
+          row.zebra:SetColorTexture(ob.r, ob.g, ob.b, 0)
+        end
         row:Show()
         if opts.render then
           opts.render(row, index)
