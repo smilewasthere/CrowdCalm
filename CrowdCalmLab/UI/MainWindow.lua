@@ -220,6 +220,10 @@ local function buildRail(parent)
     glow:Hide()
     btn.glow = glow
     btn:SetScript("OnClick", function()
+      -- pre.7: the rail is real buttons, so navigation must sound like it
+      if ns.sound then
+        ns.sound.Play("click")
+      end
       UI.SwitchPage(def.index)
     end)
     railButtons[def.index] = btn

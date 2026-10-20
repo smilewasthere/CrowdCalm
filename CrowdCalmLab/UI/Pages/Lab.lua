@@ -1,6 +1,8 @@
--- UI/Pages/Lab.lua — guided strip, setting-tile grid, Run controls, running
--- overlay with cancel (brief section 6.2). Selection is stored in
--- db.selection[id]; the combine toggle uses the reserved id "__combine__".
+-- UI/Pages/Lab.lua — guided strip (pre.7: numbered badge chips), setting-
+-- tile grid, Run controls (pre.7: Big step toggle), running overlay with
+-- cancel (brief section 6.2, pre.7: 15 s prewarm phase, no pre-run cap
+-- advisory). Selection is stored in db.selection[id]; the combine toggle
+-- uses the reserved id "__combine__".
 local ADDON_NAME, ns = ...
 
 local Widgets = ns.widgets
@@ -131,16 +133,25 @@ local function create(parent)
   local frame = parent
   local pad = 12
 
-  -- guided strip
+  -- guided strip (pre.7 restyle: numbered badge chips; labels dropped the
+  -- leading "N." so four chips fit the 696 px strip — layout follows the
+  -- real text widths instead of a fixed 200 px pitch)
   local guide = Widgets.Panel(frame, { base = ns.palette.obsidian, borderAlpha = 0.4 })
   guide:SetHeight(28)
   guide:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -pad)
   guide:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -pad, -pad)
-  local stepTexts = {}
+  local stepChips = {}
+  local x = 12
   for i, key in ipairs({ "guide_stand", "guide_pick", "guide_run", "guide_read" }) do
+    local badge = guide:CreateTexture(nil, "ARTWORK")
+    badge:SetSize(16, 16)
+    badge:SetPoint("LEFT", guide, "LEFT", x, 0)
+    local num = Widgets.Text(guide, "small", tostring(i))
+    num:SetPoint("CENTER", badge, "CENTER", 0, 0)
     local fs = Widgets.Text(guide, "small", L(key))
-    fs:SetPoint("LEFT", guide, "LEFT", 12 + (i - 1) * 200, 0)
-    stepTexts[i] = fs
+    fs:SetPoint("LEFT", badge, "RIGHT", 6, 0)
+    stepChips[i] = { badge = badge, num = num, text = fs }
+    x = x + 16 + 6 + (fs:GetStringWidth() or 60) + 26
   end
 
   -- tile grid (scrollable via row-list wheel on the whole grid container)
@@ -256,6 +267,20 @@ local function create(parent)
   })
   combineBox:SetPoint("TOPLEFT", controls, "TOPLEFT", 8, -4)
 
+  -- pre.7: remembered Big step toggle (owner item 3) — every setting jumps
+  -- to its lowest value (Body Quota at half) to show whether it matters at all
+  local bigBox = Widgets.Checkbox(controls, {
+    label = L("big_step"),
+    checked = ns.db.settings.lab.bigStep and true or false,
+    onToggle = function(checked)
+      ns.db.settings.lab.bigStep = checked and true or false
+    end,
+  })
+  bigBox:SetPoint("LEFT", combineBox, "RIGHT", 20, 0)
+  Widgets.TooltipLines(bigBox, function()
+    return { L("big_step_hint") }
+  end)
+
   local estText = Widgets.Text(controls, "small", "")
   Skin.ColorText(estText, ns.palette.textDim)
 
@@ -279,13 +304,9 @@ local function create(parent)
       if not ok then
         ns.ui.ShowBanner(L("err_" .. (err or "noselect")) or tostring(err), "danger", 6)
       else
-        -- pre.5: a capped FPS/VSync setup outranks the routine banner
-        local caps = ns.lab.caps
-        if caps and caps.warnings and #caps.warnings > 0 then
-          ns.ui.ShowBanner(L("cap_banner"), "costColor", 8)
-        else
-          ns.ui.ShowBanner(L("banner_running"), "gold", 6)
-        end
+        -- pre.7: no pre-run cap banner — the warning is decided after the
+        -- run against the measured FPS (Results + completion banner)
+        ns.ui.ShowBanner(L("banner_running"), "gold", 6)
         if refreshOverlay then
           refreshOverlay() -- cover the page now, not on the next 1 Hz tick
         end
@@ -367,17 +388,13 @@ local function create(parent)
   liveFpsText:SetPoint("TOP", stepText, "BOTTOM", 0, -12)
   local passText = Widgets.Text(overlay, "small", "")
   passText:SetPoint("TOP", liveFpsText, "BOTTOM", 0, -6)
-  -- pre.5: two persistent advisory lines (owner request: keep still during
-  -- the run; read-only cap warning when Max FPS/VSync may limit results)
+  -- pre.5/7: one persistent advisory line (owner request: keep still during
+  -- the run). The pre-run cap advisory moved out of the overlay — cap
+  -- warnings are a post-run verdict now (Results + completion banner).
   local keepStillText = Widgets.Text(overlay, "small", L("overlay_keep_still"))
   keepStillText:SetPoint("TOP", passText, "BOTTOM", 0, -10)
   keepStillText:SetJustifyH("CENTER")
   Skin.ColorText(keepStillText, ns.palette.textDim)
-  local capText = Widgets.Text(overlay, "small", "")
-  capText:SetPoint("TOP", keepStillText, "BOTTOM", 0, -4)
-  capText:SetJustifyH("CENTER")
-  Skin.ColorText(capText, ns.palette.costColor())
-  capText:Hide()
   local cancelBtn = Widgets.Button(overlay, {
     label = L("cancel_test"),
     primary = true,
@@ -399,6 +416,7 @@ local function create(parent)
   combatBanner:Hide()
 
   local PHASE_KEYS = {
+    prewarm = "phase_prewarm",
     sample = "phase_sample",
     settle = "phase_settle",
     warmup = "phase_warmup",
@@ -407,6 +425,7 @@ local function create(parent)
   }
   -- pre.6: headline + glow color per phase (measuring = gold, waiting = dim)
   local PHASE_TINT = {
+    prewarm = ns.palette.textDim,
     sample = ns.palette.goldBright,
     settle = ns.palette.textDim,
     warmup = ns.palette.textDim,
@@ -428,38 +447,30 @@ local function create(parent)
     end
     local p = ns.lab.Progress()
     phaseText:SetText(L(PHASE_KEYS[p.phase] or "") or p.phase)
-    local label = p.labelKey and L(p.labelKey) or "?"
-    stepText:SetText(Lfmt("step_pattern", p.jobIndex, p.jobCount, label))
-    if p.passes > 1 then
-      passText:SetText(Lfmt("pass_pattern", p.pass, p.passes))
-    else
+    if p.phase == "prewarm" then
+      -- pre-roll: no job step or pass line yet (the crowd is settling)
+      stepText:SetText("")
       passText:SetText("")
+    else
+      local label = p.labelKey and L(p.labelKey) or "?"
+      stepText:SetText(Lfmt("step_pattern", p.jobIndex, p.jobCount, label))
+      if p.passes > 1 then
+        passText:SetText(Lfmt("pass_pattern", p.pass, p.passes))
+      else
+        passText:SetText("")
+      end
     end
     liveFpsText:SetText(string.format("%.0f FPS", ns.meter.live.fps or 0))
     combatBanner:SetShown(InCombatLockdown())
-    -- persistent cap advisory (read-only preflight of this run)
-    local caps = ns.lab.caps
-    if caps and caps.warnings and #caps.warnings > 0 then
-      local parts = {}
-      for _, w in ipairs(caps.warnings) do
-        if w == "maxfps" then
-          parts[#parts + 1] = Lfmt("cap_maxfps", tostring(caps.maxfps or "?"))
-        elseif w == "vsync" then
-          parts[#parts + 1] = L("cap_vsync")
-        end
-      end
-      capText:SetText(table.concat(parts, " / "))
-      capText:Show()
-    else
-      capText:Hide()
-    end
     if p.phase ~= lastPhase then
       lastPhase = p.phase
       local tint = PHASE_TINT[p.phase] or ns.palette.gold
       Skin.ColorText(phaseText, tint)
       ringGlow:SetVertexColor(tint.r, tint.g, tint.b, 0.18)
       local lab = ns.db.settings.lab
-      if p.phase == "sample" then
+      if p.phase == "prewarm" then
+        ring:Start(15) -- pre.7: 15 s warm-up before the first baseline
+      elseif p.phase == "sample" then
         ring:Start(lab.sampleSeconds or 8)
       elseif p.phase == "settle" then
         ring:Start(lab.settleSeconds or 6)
@@ -491,8 +502,18 @@ local function create(parent)
     else
       step = 2
     end
+    local colors = ns.palette
     for i = 1, 4 do
-      Skin.ColorText(stepTexts[i], i == step and ns.palette.goldBright or ns.palette.textDim)
+      local chip = stepChips[i]
+      local isDone = i < step
+      local isActive = i == step
+      local fill = isActive and colors.gold or isDone and colors.gainColor() or colors.raised
+      chip.badge:SetColorTexture(fill.r, fill.g, fill.b, 1)
+      Skin.ColorText(chip.num, (isActive or isDone) and colors.obsidian or colors.textDim)
+      Skin.ColorText(
+        chip.text,
+        isActive and colors.goldBright or isDone and colors.text or colors.textDim
+      )
     end
   end
 
@@ -516,7 +537,15 @@ local function create(parent)
     if not ns.lab.IsRunning() and ns.lab.completedAt and ns.lab.completedAt ~= lastCompleted then
       lastCompleted = ns.lab.completedAt
       lastSeenError = nil
-      ns.ui.ShowBanner(L("lab_done"), "gainColor", 8)
+      -- pre.7: a failed restore outranks a capped run, which outranks done
+      local r = ns.lab.lastRun
+      if r and r.restoreFailed then
+        ns.ui.ShowBanner(L("restore_failed_banner"), "danger", 10)
+      elseif r and r.caps and r.caps.limited then
+        ns.ui.ShowBanner(L("cap_banner_limited"), "costColor", 8)
+      else
+        ns.ui.ShowBanner(L("lab_done"), "gainColor", 8)
+      end
       ns.ui.SwitchPage(3) -- Results (review I10)
     end
   end

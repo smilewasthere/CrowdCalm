@@ -8,8 +8,8 @@
 //   5. (G3) Media/ manifest: every expected .tga exists, is power-of-two,
 //      and the total is under 1 MB
 //   6. (G4) Locale: ns.L must be callable (__call present) because the
-//      codebase calls L("key"); missing literal locale keys warn (fallback
-//      renders the key text by design, so they are warnings not failures).
+//      codebase calls L("key"); missing literal locale keys FAIL the build
+//      (pre.7 G6: a missing key renders as raw key text in game).
 //   7. (G5) Glyphs: string literals may only contain Latin-1 (<= U+00FF)
 //      plus U+2014 (em dash). The WoW client font subset renders those and
 //      nothing else; e.g. U+2192 (->) draws as a tofu box in game.
@@ -316,11 +316,12 @@ function checkLocale(luaFiles) {
   let m;
   while ((m = defRe.exec(localeSrc)) !== null) defined.add(m[1]);
 
-  // 3. literal call-site keys (L("x") and Lfmt("x")); dynamic keys
-  //    ("crowd_" .. label) never close the paren right after the key, so
-  //    they are not matched by design.
+  // 3. literal call-site keys (L("x") and Lfmt("x", ...)); the key string
+  //    must be followed by "," or ")" so dynamic keys like
+  //    ("crowd_" .. label) still never match, while Lfmt's arguments no
+  //    longer slip past the check (pre.7: they were silently unchecked).
   const used = new Map(); // key -> first file
-  const useRe = /\b(?:L|Lfmt)\(\s*"([A-Za-z0-9_]+)"\s*\)/g;
+  const useRe = /\b(?:L|Lfmt)\(\s*"([A-Za-z0-9_]+)"\s*[,)]/g;
   for (const f of luaFiles) {
     const src = fs.readFileSync(f, "utf8");
     useRe.lastIndex = 0;
@@ -333,8 +334,11 @@ function checkLocale(luaFiles) {
   }
   const missing = [...used.keys()].filter((k) => !defined.has(k));
   if (missing.length > 0) {
-    console.warn(
-      "warn locale keys used but not defined (render as key text): " +
+    // G6 (pre.7): a referenced-but-undefined key renders as raw key text in
+    // game; treat it as a build failure so new keys must land with the code
+    // that uses them.
+    fail(
+      "locale keys used but not defined (would render as key text): " +
         missing.join(", ")
     );
   }

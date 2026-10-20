@@ -176,9 +176,49 @@ intentional globals are:
    and grid lines (also single-consumer, but they replace existing
    widget behavior rather than adding an API).
 20. **Overlay countdown reuses the Ring clock (pre.6).** `Widgets.Ring`
-   already stores `duration`/`startedAt` for its fallback bar; the
-   centered countdown reads those fields at the 1 Hz refresh instead of
-   owning a second timer, so the number and the ring can never disagree.
+    already stores `duration`/`startedAt` for its fallback bar; the
+    centered countdown reads those fields at the 1 Hz refresh instead of
+    owning a second timer, so the number and the ring can never disagree.
+21. **Recommendation thresholds tightened (pre.7, owner ruling).**
+    Amends #11: a row is only "Worth it" when the gain is also >= 5% of
+    its baseline and larger than the baseline gap (max-min of that test's
+    baselines). Below that the chip reads "No clear gain"; a negative
+    gain bigger than the gap reads "Slower" (new classifier state, red).
+    Chips, the What-to-do panel and the Best medal still call one
+    classifier, so they cannot disagree; older saved rows simply lack
+    the baseline stats and degrade to the pre.7-less path.
+22. **Stutter rule counts episodes, not every long frame (pre.7, owner
+    spec).** A tick records only a freeze (frame >= 100 ms), a micro
+    burst (3+ frames >= 50 ms in one tick) or a low-FPS streak (2
+    consecutive ticks under the floor); isolated 50-99 ms frames are
+    noise, not events. The first 5 s after load/zone change are
+    suppressed and saved entries without wall-clock time are dropped, so
+    counts stay truthful across sessions. The meter sparkline was aligned
+    to the same micro-burst rule so the two views never contradict.
+23. **Run plan gained a pre-roll, a shuffle and an opt-in big step
+    (pre.7, owner spec).** Jobs start after a 15 s pre-warm phase (its
+    own ring, counted in the estimate) and run in a shuffled order with
+    the combine job pinned last; the optional "Big step" checkbox adds
+    one job per setting at its lowest allowed value (Body Quota ~ half),
+    labeled "Big step: A -> B -> A" with the "shows the setting matters"
+    note. Values are re-read after every apply (mismatch = "Not
+    testable") and after the final restore (mismatch = restore-failed
+    banner + report warning) instead of trusting SetCVar.
+24. **Addons page lists enabled addons only (pre.7, owner request).**
+    The brief's cost panel showed every addon; disabled rows cluttered it,
+    so the list filters to enabled ones (Blizzard included, marked "not
+    queryable") with the hidden count in the sort tooltip, and gained a
+    one-click "Disable & Reload" (confirm -> done sound -> `ReloadUI`
+    after 1 s, pcall'd with an error fallback). Enable state comes from
+    `Compat.IsAddOnEnabled`'s probe chain, which fails open (enabled) so
+    an unknown API never empties the list; the real return semantics are
+    a VERIFY item.
+25. **G4 locale check is a hard failure (pre.7).** The gate previously
+    only warned about `L("missing")` literals; it now fails the build and
+    also matches `Lfmt("key", ...)` calls (the old regex required `)`
+    immediately after the key, so every format call was unchecked). Both
+    gaps were proven with RED runs before going green.
+
 ## Testing philosophy
 
 Nothing in this repository has run inside WoW yet, by design (the owner

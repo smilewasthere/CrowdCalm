@@ -110,6 +110,15 @@ function AddonCost.Refresh()
     row.name = entry.name
     row.title = entry.title
     row.isSelf = (entry.name == ADDON_NAME)
+    -- pre.7: the Addons page lists enabled addons only; fails open (true)
+    local enabled = true
+    if ns.compat and ns.compat.IsAddOnEnabled then
+      local okE, vE = pcall(ns.compat.IsAddOnEnabled, entry.name, entry.idx)
+      if okE and type(vE) == "boolean" then
+        enabled = vE
+      end
+    end
+    row.enabled = enabled
     row.queryable = false
     row.cpuRecent = nil
     row.cpuPeak = nil

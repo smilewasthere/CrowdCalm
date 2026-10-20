@@ -1,6 +1,8 @@
 -- UI/Pages/Addons.lua — sortable addon cost table with search, CPU bars,
--- top-3 badges, explicit memory scan, and per-row disable-on-reload behind
--- confirmation (brief section 6.5).
+-- top-3 badges, explicit memory scan, and per-row "Disable & Reload" behind
+-- confirmation (brief section 6.5). Pre.7: the list shows ENABLED addons
+-- only (Blizzard addons included, marked not queryable), one click disables
+-- and reloads the UI, and success/failure is audible + visible.
 local ADDON_NAME, ns = ...
 
 local Widgets = ns.widgets
@@ -12,7 +14,11 @@ local function create(parent)
   local frame = parent
   local pad = 12
 
-  -- toolbar
+  -- toolbar (pre.7: the controls sit on a visible strip)
+  local toolbar = Widgets.Panel(frame, { base = ns.palette.obsidian, borderAlpha = 0.45 })
+  toolbar:SetHeight(34)
+  toolbar:SetPoint("TOPLEFT", frame, "TOPLEFT", pad - 4, pad - 4)
+  toolbar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -pad + 4, pad - 4)
   local searchBox = CreateFrame("EditBox", nil, frame)
   searchBox:SetHeight(24)
   searchBox:SetWidth(200)
@@ -79,6 +85,13 @@ local function create(parent)
   local sortLabel = Widgets.Text(frame, "small", "")
   sortLabel:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -pad, -pad - 4)
   Skin.ColorText(sortLabel, ns.palette.textDim)
+  Widgets.TooltipLines(sortLabel, function()
+    -- pre.7: disabled addons are filtered out; say how many were hidden
+    if (frame.hiddenDisabled or 0) > 0 then
+      return { Lfmt("addons_hidden_disabled", frame.hiddenDisabled) }
+    end
+    return { L("addons_enabled_only_note") }
+  end)
 
   -- column headers (click to sort): ghost/text-only buttons; the active
   -- column is gold (pre.4 restyle, replaces the flat bordered headers)
@@ -144,10 +157,12 @@ local function create(parent)
         row.cpuBarBg:SetHeight(10)
         row.cpuBarBg:SetPoint("LEFT", row.nameFs, "RIGHT", 12, 0)
         row.cpuBarBg:SetWidth(80)
-        row.cpuBarBg:SetColorTexture(ns.palette.obsidian.r, ns.palette.obsidian.g, ns.palette.obsidian.b, 1)
+        -- pre.7: track texture + gradient fill instead of two flat colors
+        row.cpuBarBg:SetTexture(Skin.mediaPath .. "bar_track.tga")
         row.cpuBar = row:CreateTexture(nil, "OVERLAY")
         row.cpuBar:SetHeight(10)
         row.cpuBar:SetPoint("LEFT", row.cpuBarBg, "LEFT", 0, 0)
+        row.cpuBar:SetTexture(Skin.mediaPath .. "bar_fill.tga")
         row.cpuFs = Widgets.Text(row, "small", "")
         row.cpuFs:SetPoint("LEFT", row.cpuBarBg, "RIGHT", 8, 0)
         row.memFs = Widgets.Text(row, "small", "")
@@ -157,17 +172,24 @@ local function create(parent)
         row.disableBtn = Widgets.Button(row, {
           small = true,
           label = L("addons_disable_action"),
+          sound = "done", -- pre.7: the action is audible, not just a click
           onClick = function(self)
             local entry2 = row.currentEntry
             if not entry2 then
               return
             end
             Widgets.Confirm(Lfmt("addons_disable_confirm", entry2.title), function()
-              local ok = ns.addonCost.DisableOnReload(entry2.name)
+              local ok, err = ns.addonCost.DisableOnReload(entry2.name)
               if ok then
-                entry2.pendingDisable = true -- survives re-render (review M2)
-                row.badge:SetText(L("addons_disable_pending"))
-                Skin.ColorText(row.badge, ns.palette.danger)
+                -- pre.7: one click disables AND reloads; the owner watches
+                -- the addon disappear on the other side of the reload
+                ns.ui.ShowBanner(Lfmt("addons_disabled_now", entry2.title), "gold", 6)
+                C_Timer.After(1.0, function()
+                  pcall(ReloadUI)
+                end)
+              else
+                ns.sound.Play("error")
+                ns.ui.ShowBanner(L("err_disable_failed") .. " (" .. tostring(err) .. ")", "danger", 5)
               end
             end)
           end,
@@ -191,9 +213,6 @@ local function create(parent)
       if frame.filteredRank[index] and frame.filteredRank[index] <= 3 and sortField == "cpu" then
         row.badge:SetText(L("addons_top3") .. " #" .. frame.filteredRank[index])
         Skin.ColorText(row.badge, ns.palette.goldBright)
-      elseif entry.pendingDisable then
-        row.badge:SetText(L("addons_disable_pending"))
-        Skin.ColorText(row.badge, ns.palette.danger)
       else
         row.badge:SetText("")
       end
@@ -216,11 +235,18 @@ local function create(parent)
     query = (query or ""):lower()
     local rows, n = ns.addonCost.Rows()
     frame.filtered = {}
+    local hiddenDisabled = 0
     for i = 1, n do
       local row = rows[i]
-      local title = (row.title or row.name or ""):lower()
-      if query == "" or title:find(query, 1, true) then
-        frame.filtered[#frame.filtered + 1] = row
+      -- pre.7: enabled addons only (the owner asked for exactly this list);
+      -- disabled addons are counted, not shown
+      if row.enabled == false then
+        hiddenDisabled = hiddenDisabled + 1
+      else
+        local title = (row.title or row.name or ""):lower()
+        if query == "" or title:find(query, 1, true) then
+          frame.filtered[#frame.filtered + 1] = row
+        end
       end
     end
     frame.filteredRank = {}
@@ -243,8 +269,9 @@ local function create(parent)
     if list.Refresh then
       list:Refresh()
     end
+    frame.hiddenDisabled = hiddenDisabled
     sortLabel:SetText(
-      string.format(L("addons_count"), #frame.filtered)
+      Lfmt("addons_count_enabled", #frame.filtered)
         .. " · "
         .. Lfmt("addons_sorted_by", L("sort_" .. sortField) or sortField)
     )

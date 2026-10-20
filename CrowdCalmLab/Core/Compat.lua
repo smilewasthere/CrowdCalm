@@ -117,6 +117,42 @@ function Compat.GetAddOnInfo(i)
   return nil
 end
 
+-- pre.7: is this addon enabled right now (for the Addons page's
+-- enabled-only list)? Probe order: C_AddOns.IsAddOnEnabled by name, then
+-- by index, then the enable-state numerics, then the legacy global. Every
+-- path pcalls; when nothing can be determined the answer fails OPEN (true)
+-- so the list never silently goes empty on an unfamiliar client
+-- (docs/VERIFY.md has the live check).
+function Compat.IsAddOnEnabled(name, idx)
+  if C_AddOns and C_AddOns.IsAddOnEnabled then
+    if type(name) == "string" then
+      local ok, v = pcall(C_AddOns.IsAddOnEnabled, name)
+      if ok and type(v) == "boolean" then
+        return v
+      end
+    end
+    if idx then
+      local ok, v = pcall(C_AddOns.IsAddOnEnabled, idx)
+      if ok and type(v) == "boolean" then
+        return v
+      end
+    end
+  end
+  if C_AddOns and C_AddOns.GetAddOnEnableState and type(name) == "string" then
+    local ok, v = pcall(C_AddOns.GetAddOnEnableState, name, "player")
+    if ok and type(v) == "number" then
+      return v ~= 0
+    end
+  end
+  if GetAddOnEnableState and type(name) == "string" then
+    local ok, v = pcall(GetAddOnEnableState, name, "player")
+    if ok and type(v) == "number" then
+      return v ~= 0
+    end
+  end
+  return true
+end
+
 ns.onLogin(function()
   ns.util.LogInfo(Compat.describe())
 end)

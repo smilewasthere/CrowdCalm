@@ -233,7 +233,10 @@ function Guard.Apply(name, value)
   return true, readBack
 end
 
--- Restore one CVar (queued automatically while in combat).
+-- Restore one CVar (queued automatically while in combat). Pre.7 A1: the
+-- restore is verified by reading the value back — if it did not come back,
+-- the entry stays held (so the footer Restore button remains available) and
+-- the caller gets false + "mismatch:<current>".
 function Guard.Restore(name)
   local entry = held and held.names[name]
   if not entry or entry.released then
@@ -255,14 +258,19 @@ function Guard.Restore(name)
   restoringSelf = true
   local ok = pcall(C_CVar.SetCVar, name, entry.original)
   restoringSelf = false
-  if ok then
-    entry.applied = nil
-    entry.released = true
-    if ns.db and ns.db.lastApplied then
-      ns.db.lastApplied[name] = nil
-    end
+  if not ok then
+    return false, "set-failed"
   end
-  return ok
+  local readBack = Guard.Read(name)
+  if readBack ~= nil and not valuesEqual(readBack, entry.original) then
+    return false, "mismatch:" .. tostring(readBack)
+  end
+  entry.applied = nil
+  entry.released = true
+  if ns.db and ns.db.lastApplied then
+    ns.db.lastApplied[name] = nil
+  end
+  return true, readBack
 end
 
 function Guard.RestoreAll()

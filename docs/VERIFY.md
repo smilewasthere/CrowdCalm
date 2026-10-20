@@ -276,3 +276,89 @@ note the result in this file (or tell the addon author).
 58. **Media budget.** Gate reports 27 files / 853,156 bytes (< 1 MB);
     regenerating with `python scripts/make-textures.py` reproduces
     every texture byte-for-byte (deterministic seeds).
+
+## pre.7 truthfulness + engine items
+
+59. **Addon enable-state API semantics.** `Compat.IsAddOnEnabled` probes
+    `C_AddOns.IsAddOnEnabled(name)` -> `(idx)` ->
+    `C_AddOns.GetAddOnEnableState(name, "player")` -> global fallback and
+    fails open (enabled) when nothing works. Confirm the first probe that
+    fires actually returns what the addon assumes:
+    `/dump C_AddOns.IsAddOnEnabled("Blizzard_FrameXML")`
+    `/dump C_AddOns.GetAddOnEnableState("Blizzard_FrameXML", "player")`
+    Record the shapes; if `IsAddOnEnabled` needs the index form, the
+    Addons page silently treats everything as enabled (fails open) and
+    the probe order should be swapped.
+60. **Recommendation thresholds.** Run a test where the gain is small
+    (under 5% of baseline or inside the baseline gap): the chip reads
+    "No clear gain", the summary sentence drops the recommendation, and
+    no "Worth it" medal appears. Force a slower result (e.g. raise a
+    setting during a run): chip reads "Slower" (red) and the sentence
+    says the change made things worse. Only a gain >= 5% AND > baseline
+    gap gets "Worth it".
+61. **Cap warning is post-run and within 10%.** With `/console maxfps`
+    set low enough to pin FPS near the cap: no banner appears when the
+    run starts and no cap line shows on the overlay; after the run the
+    Results line, report `Caps:` line and completion banner appear only
+    when measured FPS >= 90% of the cap. With a high cap (or no cap)
+    none of them appear. `maxfps` is still never written. VSync stays
+    informational on both states.
+62. **Big step job.** In Lab, check "Big step": every selected setting
+    gains one extra job at its lowest allowed value (Body Quota lands at
+    about half its range); estimate time grows accordingly. The card and
+    report show "Big step: A -> B -> A" plus the note about the setting
+    mattering; after the run the value is restored and re-read. Unchecked
+    (default), no big-step jobs run and the toggle state survives
+    `/reload`.
+63. **Pre-roll and shuffle.** Start a run: the first 15 seconds are a
+    pre-warm phase (its own ring countdown, measured FPS visible, steps
+    blanked), then jobs begin in a different order than the settings
+    grid; run it twice and compare - orders should differ, and the
+    combine job (when enabled) always runs last. The estimate includes
+    the 15 s. `math.random` uses WoW's per-session seed (verify two
+    orders differ in one session).
+64. **Read-back after apply.** Every applied value is re-read before the
+    settle phase. If a CVar refuses the write, that row reports "Not
+    testable" with the mismatch reason instead of a fake gain. (Forced
+    mismatch is hard to reproduce; verify the read-back code path at
+    least runs on a normal run - no errors, all rows still valid.)
+65. **Final-restore check.** After the run all values are restored and
+    re-read; if any differs, the completion banner reads "Restore check
+    failed" (priority over the cap warning and "Run complete") and the
+    report carries the warning line. Normal runs finish with the plain
+    success banner.
+66. **Stutter rule.** A tick logs only for a frame >= 100 ms, 3+ frames
+    >= 50 ms in one tick, or 2 consecutive ticks under the FPS floor;
+    single 50-99 ms frames never appear. The first ~5 s after a
+    `/reload` or zone change records nothing (suppression), entries
+    saved by older versions without a wall-clock time vanish after
+    `/reload`, and the Overview sparkline marks the same moments the
+    log records (3+ micro frames spike the bar too).
+67. **Stutter page layout.** Newest events on top; columns read Time |
+    Severity | FPS | Place with a header row; summary tiles count
+    Freezes / Heavy / Notable; the timeline places events by wall-clock
+    time (right = now); clicking a row opens the drawer with a severity
+    chip; with no events the empty state shows instead of a blank list.
+68. **Addons enabled-only + Disable & Reload.** The list shows only
+    enabled addons (Blizzard included, marked "not queryable"); the sort
+    label counts enabled ones and its tooltip mentions how many disabled
+    rows are hidden. "Disable & Reload" asks once, plays the done sound,
+    shows the pending banner and reloads after ~1 s (check the disabled
+    addon is off afterwards); if `ReloadUI` is blocked, the error sound
+    and an error banner appear instead of a silent no-op.
+69. **About page.** Title, version and status chip at top; four cards
+    (What it does / Safety promise / Privacy / This addon's own cost);
+    self-check card with a working memory button; URL box at the bottom;
+    no old paragraphs linger from pre.6.
+70. **Lab guide strip + run banner.** Six numbered badge chips fit one
+    row without overlap; the Big step checkbox has its tooltip; during
+    the run the banner always reads as running (not success text);
+    guide strip only changes on the Lab page (other pages unaffected).
+71. **Sounds.** Rail tab clicks play; Settings "Play test sound" plays
+    the done sound; Mute UI sounds silences it; existing button/checkbox
+    sounds still work after the rail change.
+72. **Gate RED proofs.** `node scripts/check-lua.js --fixture` exits 1;
+    temporarily removing one locale key makes the gate fail (not warn)
+    and the message names the key; `Lfmt("key", ...)` calls are checked
+    too (the old regex missed them). Restore afterwards and the gate
+    reports 0 failures.

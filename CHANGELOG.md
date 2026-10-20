@@ -19,6 +19,77 @@ All notable changes to CrowdCalm Lab are documented here.
   `scripts/check-lua.js` (static syntax/TOC gate).
 - Docs: `docs/VERIFY.md`, `docs/FIRST-RUN-CHECKLIST.md`, `docs/DESIGN.md`.
 
+## 1.0.0-pre.7 (2026-10-20)
+
+Truthfulness pass on the Stutter page plus the owner's post-pre.6
+feedback (7 items + 4 screenshots) and the lab engine rules the owner
+specified.
+
+### Changed
+
+- **Stutter rule tells the truth:** a tick is recorded only for a
+  freeze (any frame >= 100 ms), a micro burst (3+ frames >= 50 ms in one
+  tick) or a low-FPS streak (2 consecutive ticks under the FPS floor);
+  isolated 50-99 ms frames are ignored instead of inflating the count.
+  The first 5 seconds after a load or zone change are suppressed, saved
+  entries without a wall-clock time are dropped on load, and the meter
+  sparkline now counts micro bursts the same way the log does so both
+  agree.
+- **Stutter list redesign:** newest events on top, fixed Time /
+  Severity / FPS / Place columns with a header row, severity-tinted
+  name, a summary strip (Freezes / Heavy / Notable), an empty state,
+  a severity chip on the detail drawer, and a wall-clock timeline
+  (previously stored day-relative times could render off-scale).
+- **Lab recommendation honesty:** a row is only recommended when the
+  gain is at least 5% of its baseline AND larger than the baseline gap
+  (max-min of that test's baselines), otherwise the chip says "No clear
+  gain"; a negative gain bigger than the baseline gap gets its own
+  "Slower" chip. The Results "Best" medal only marks rows classified
+  "Worth it".
+- **Cap warning only when it matters:** Max FPS is read again after the
+  run and the warning (Results line, report line, completion banner)
+  appears only when the measured FPS was within 10% of the cap. The
+  pre-run banner and overlay cap line are gone; VSync stays
+  informational.
+- **Addons page lists enabled addons only** (Blizzard addons included
+  and marked "not queryable"), counts "N enabled", and shows the hidden
+  disabled count in the sort tooltip.
+- **About page redesign:** title, version and status chip; four cards -
+  What it does / Safety promise / Privacy / This addon's own cost -
+  a self-check card with a memory button, and the URL box at the bottom.
+- **Lab guide strip restyle:** steps become numbered badge chips with
+  per-state colors; labels shortened so the six steps fit one row.
+- **Overview polish:** zone name moved out of the gauge (it overlapped
+  the dome at times), the dome glow is tinted with the active ramp
+  color, and the best-from-last-run bars use a deterministic width
+  instead of a resize-order race.
+- Addons `Disable & Reload` now works as a single confirmed action
+  (done sound, error sound + message if the UI cannot reload); the old
+  pending-row state is gone. Buttons and the rail now play UI sounds,
+  and Settings gained a "Play test sound" button.
+
+### Added
+
+- **Big step (opt-in checkbox, default off):** for every setting the
+  lab adds one job at the lowest allowed value (Body Quota at roughly
+  half the setting) to show whether the setting matters at all; cards
+  and the report show "Big step: A -> B -> A" plus the note "This shows
+  the setting matters, not that the lowest value is right for you."
+- **15 s pre-roll and job shuffle:** jobs start after a 15 second
+  pre-roll (its own phase, measured FPS shown in the ring) and the
+  order is shuffled every run; the combine job always runs last.
+- **Read-back verification:** every applied value is re-read
+  immediately (mismatch = "Not testable" for that row) and the final
+  restore is re-read too (mismatch = "Restore check failed" banner and
+  a report warning).
+
+### Fixed
+
+- Gate: missing-locale-key check now fails the build (was a warning)
+  and also validates `Lfmt("key", ...)` calls, which the old regex
+  skipped entirely - two RED runs proved it before it went green (173
+  keys, 0 missing).
+
 ## 1.0.0-pre.6 (2026-10-19)
 
 Visual pass for the two pages the owner called out ("Lab not pretty",

@@ -86,6 +86,23 @@ local function create(parent)
   Widgets.TooltipLines(fontBox, function()
     return { L("set_compartment_note") }
   end)
+  -- pre.7: sound diagnosis — plays even when the addon is muted, so "no
+  -- sound at all" points at the game's UI sound volume instead of at us
+  local testSoundBtn = Widgets.Button(frame, {
+    small = true,
+    label = L("sound_test"),
+    onClick = function()
+      if ns.sound then
+        ns.sound.PlayRaw("done")
+      end
+    end,
+  })
+  testSoundBtn:SetWidth(100)
+  testSoundBtn:SetHeight(22)
+  testSoundBtn:SetPoint("LEFT", fontBox, "RIGHT", 24, 0)
+  Widgets.TooltipLines(testSoundBtn, function()
+    return { L("sound_test_note") }
+  end)
   y = y - 36
 
   local mmBox = Widgets.Checkbox(frame, {

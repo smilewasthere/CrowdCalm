@@ -1,11 +1,14 @@
 -- UI/Pages/Results.lua — ranked cards from the latest run (brief section
--- 6.3, 5.10 + pre.3 owner feedback): dual teal/amber bars, before/after,
--- Best medal, confidence badge with legend tooltip, an action chip (Worth
--- it / No gain / Re-test / Can't test / Hitch), the tested change ("Change
--- 7 to 6") with the setting's explanation, a What-to-do recommendation
--- panel (5.10), an owner-editable visual-cost dropdown (5.6), a Copy report
--- button that includes the recommendations, and a permanently disabled
--- "Apply as crowd profile" panel.
+-- 6.3, 5.10 + pre.3 owner feedback, pre.7 engine feedback): dual teal/amber
+-- bars, before/after, Best medal, confidence badge with legend tooltip, an
+-- action chip (Worth it / Slower / No clear gain / Re-test / Can't test /
+-- Hitch) using the owner's threshold (>= 5% of the baseline mean AND bigger
+-- than the baseline spread), the tested change ("Change 7 to 6", or
+-- "Big step: A -> B -> A" for big-step runs), a What-to-do recommendation
+-- panel (5.10), an owner-editable visual-cost dropdown (5.6), a post-run
+-- frame-cap warning line, and a Copy report button that includes the
+-- recommendations and a permanently disabled "Apply as crowd profile"
+-- panel.
 local ADDON_NAME, ns = ...
 
 local Widgets = ns.widgets
@@ -47,7 +50,33 @@ local function candNote(key)
 end
 
 -- chip classification; buildRecommendations uses the same rules so the
--- chip and the What-to-do panel can never disagree (pre.3).
+-- chip and the What-to-do panel can never disagree (pre.3, reworked pre.7).
+-- Owner rules: a gain is "Worth it" only when it is at least 5% of the
+-- baseline mean AND bigger than the baseline spread (max-min); a negative
+-- gain bigger than the spread is "Slower" (A2); everything else is
+-- "No clear gain". Rows from old runs without baselines keep the
+-- pre.7 +/-0.5 FPS floor so stored results still render sensibly.
+local function baselineStats(row)
+  if type(row.baselineMean) == "number" then
+    return row.baselineMean, row.baselineSpread or 0
+  end
+  local b = row.baselines
+  if type(b) == "table" and #b >= 2 then
+    local sum, mn, mx = 0, b[1], b[1]
+    for i = 1, #b do
+      sum = sum + b[i]
+      if b[i] < mn then
+        mn = b[i]
+      end
+      if b[i] > mx then
+        mx = b[i]
+      end
+    end
+    return sum / #b, mx - mn
+  end
+  return nil, nil
+end
+
 local function classify(row)
   if row.notTestable then
     return "cant"
@@ -58,8 +87,25 @@ local function classify(row)
   if row.noisy or row.confidence == "Low" then
     return "retest"
   end
-  if row.gain and row.gain >= 0.5 then
+  local g = row.gain
+  if type(g) ~= "number" then
+    return "nogain"
+  end
+  local mean, gap = baselineStats(row)
+  if mean then
+    if g < 0 and math.abs(g) > gap then
+      return "slower"
+    end
+    if g >= (0.05 * mean) and g > gap then
+      return "worth"
+    end
+    return "nogain"
+  end
+  if g >= 0.5 then
     return "worth"
+  end
+  if g <= -0.5 then
+    return "slower"
   end
   return "nogain"
 end
@@ -111,6 +157,8 @@ local function rowCard(parent, row, isBest, listWidth)
   local chipText, chipColor
   if kind == "worth" then
     chipText, chipColor = L("act_worth"), ns.palette.gainColor()
+  elseif kind == "slower" then
+    chipText, chipColor = L("act_slower"), ns.palette.danger
   elseif kind == "hitch" then
     chipText, chipColor = L("act_hitch"), ns.palette.danger
   elseif kind == "retest" then
@@ -142,6 +190,7 @@ local function rowCard(parent, row, isBest, listWidth)
   if row.notTestable then
     local reason = row.reason == "unreadable" and L("reason_unreadable")
       or row.reason == "already-lowest" and L("reason_already_lowest")
+      or row.reason == "restore-mismatch" and L("reason_mismatch")
       or Lfmt("reason_failed", tostring(row.reason or "?"))
     local fs = Widgets.Text(card, "small", L("not_testable") .. " — " .. reason)
     fs:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
@@ -152,6 +201,8 @@ local function rowCard(parent, row, isBest, listWidth)
   local sentence
   if kind == "worth" then
     sentence = Lfmt("results_sentence_gain", L(row.labelKey or "?"), row.gain)
+  elseif kind == "slower" then
+    sentence = Lfmt("results_sentence_slower", L(row.labelKey or "?"), math.abs(row.gain or 0))
   else
     sentence = Lfmt("results_sentence_none", L(row.labelKey or "?"))
   end
@@ -163,9 +214,14 @@ local function rowCard(parent, row, isBest, listWidth)
   -- made before pre.3 simply have no stored values and skip this line.
   -- pre.5: the values triple reads from -> to -> after (read back after the
   -- final restore), so the owner can see the value actually landed.
-  local changeText, changeTip
+  -- pre.7 A3: Big step rows show "Big step: A -> B -> A" plus the note that
+  -- a big step only proves the setting matters.
+  local changeText, changeTip, bigNote
   if row.changes and #row.changes > 1 then
     changeText = Lfmt("change_multi", #row.changes)
+    if row.bigStep then
+      bigNote = L("big_step_note")
+    end
     changeTip = {}
     for _, ch in ipairs(row.changes) do
       local nm = ch.labelKey and L(ch.labelKey) or tostring(ch.key or "?")
@@ -176,17 +232,27 @@ local function rowCard(parent, row, isBest, listWidth)
       end
     end
   elseif row.valueFrom ~= nil and row.valueTo ~= nil then
-    local note = candNote(row.key)
-    if row.valueAfter ~= nil then
-      if note then
-        changeText = Lfmt("change_note_restored", tostring(row.valueFrom), tostring(row.valueTo), tostring(row.valueAfter), note)
-      else
-        changeText = Lfmt("change_restored", tostring(row.valueFrom), tostring(row.valueTo), tostring(row.valueAfter))
-      end
-    elseif note then
-      changeText = Lfmt("change_note_pattern", tostring(row.valueFrom), tostring(row.valueTo), note)
+    if row.bigStep then
+      changeText = Lfmt(
+        "big_step_pattern",
+        tostring(row.valueFrom),
+        tostring(row.valueTo),
+        tostring(row.valueAfter ~= nil and row.valueAfter or row.valueTo)
+      )
+      bigNote = L("big_step_note")
     else
-      changeText = Lfmt("change_pattern", tostring(row.valueFrom), tostring(row.valueTo))
+      local note = candNote(row.key)
+      if row.valueAfter ~= nil then
+        if note then
+          changeText = Lfmt("change_note_restored", tostring(row.valueFrom), tostring(row.valueTo), tostring(row.valueAfter), note)
+        else
+          changeText = Lfmt("change_restored", tostring(row.valueFrom), tostring(row.valueTo), tostring(row.valueAfter))
+        end
+      elseif note then
+        changeText = Lfmt("change_note_pattern", tostring(row.valueFrom), tostring(row.valueTo), note)
+      else
+        changeText = Lfmt("change_pattern", tostring(row.valueFrom), tostring(row.valueTo))
+      end
     end
   else
     changeText = candNote(row.key)
@@ -210,6 +276,17 @@ local function rowCard(parent, row, isBest, listWidth)
         return changeTip
       end)
     end
+  end
+  if bigNote then
+    local noteFs = Widgets.Text(card, "small", bigNote)
+    noteFs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+    Skin.ColorText(noteFs, ns.palette.textDim)
+    noteFs:SetWidth(math.max(200, (listWidth or 400) - 24))
+    noteFs:SetJustifyH("LEFT")
+    anchor = noteFs
+    -- the extra note line costs the card 14 px (same budget as the other
+    -- pre.5 detail lines)
+    card:SetHeight(card:GetHeight() + 14)
   end
 
   -- pre.5 detail lines: baseline difference + rerun tip (Not reliable),
@@ -383,6 +460,7 @@ local function create(parent)
 
   -- What-to-do panel (owner ask: "explain what to change")
   local SUMMARY_H = 104
+  local list -- created below; forward-declared for setSummaryHeight
   local summary = Widgets.Panel(frame, { base = ns.palette.raised, borderAlpha = 0.6 })
   summary:SetHeight(SUMMARY_H)
   summary:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -pad - 26)
@@ -390,6 +468,19 @@ local function create(parent)
   local recTitle = Widgets.Text(summary, "small", L("rec_title"))
   recTitle:SetPoint("TOPLEFT", summary, "TOPLEFT", 12, -8)
   Skin.ColorText(recTitle, ns.palette.goldBright)
+  -- pre.7: post-run cap warning (measured within 10% of the Max FPS cap)
+  local capLine = Widgets.Text(summary, "small", "")
+  capLine:SetPoint("BOTTOMLEFT", summary, "BOTTOMLEFT", 12, 6)
+  capLine:SetWidth(640)
+  capLine:SetJustifyH("LEFT")
+  Skin.ColorText(capLine, ns.palette.danger)
+  capLine:Hide()
+  local function setSummaryHeight(h)
+    summary:SetHeight(h)
+    list:ClearAllPoints()
+    list:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -(pad + 26 + h + 8))
+    list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, pad + 48)
+  end
   local recLines = {}
   local function showRecLines(lines)
     for i = 1, math.max(#lines, #recLines) do
@@ -416,9 +507,8 @@ local function create(parent)
   end
   summary:Hide()
 
-  local list = CreateFrame("Frame", nil, frame)
-  list:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -pad - 26 - SUMMARY_H - 8)
-  list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pad, pad + 48)
+  list = CreateFrame("Frame", nil, frame)
+  setSummaryHeight(SUMMARY_H)
   list:EnableMouseWheel(true)
   local cardCache = {} -- index -> card (bounded pool; review I9)
   local offset = 0
@@ -438,7 +528,9 @@ local function create(parent)
       local row = sortedRows[i]
       local card = cardCache[i]
       if not card then
-        card = rowCard(list, row, i == 1 and row.gain and row.gain > 0.5, listWidth)
+        -- the medal goes to the top Worth-It row (pre.7: never to a row
+        -- that only cleared the old fixed 0.5 floor)
+        card = rowCard(list, row, i == 1 and classify(row) == "worth", listWidth)
         cardCache[i] = card
       end
       card:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -y)
@@ -479,17 +571,30 @@ local function create(parent)
       lines[#lines + 1] = "Crowd: " .. ns.context.Label()
       if run then
         lines[#lines + 1] = string.format("Run #%d mode=%s", run.id or 0, tostring(run.mode))
-        -- pre.5: caps preflight + movement warning in the report header
+        if run.bigStep then
+          lines[#lines + 1] = "Big step mode: ON (each setting at its lowest value)"
+        end
+        if type(run.order) == "table" and #run.order > 0 then
+          lines[#lines + 1] = "Test order (shuffled): " .. table.concat(run.order, ", ")
+        end
+        -- pre.5/7: caps preflight + post-run cap verdict + movement warning
         if run.caps then
           local c = run.caps
           local bits = {
             "maxfps=" .. ((c.maxfps and c.maxfps > 0) and tostring(c.maxfps) or "uncapped/unknown"),
             "vsync=" .. (c.vsync and "on" or "off"),
           }
-          if c.warnings and #c.warnings > 0 then
-            bits[#bits + 1] = "WARNING: a frame cap may limit these results (" .. table.concat(c.warnings, ", ") .. ")"
+          if c.limited then
+            bits[#bits + 1] = string.format(
+              "WARNING: frame cap limited these results (measured %.0f FPS at 90%% of a %.0f FPS cap)",
+              c.measuredFps or 0,
+              c.maxfps or 0
+            )
           end
           lines[#lines + 1] = "Caps: " .. table.concat(bits, " ")
+        end
+        if run.restoreFailed then
+          lines[#lines + 1] = "WARNING: a setting did not read back after restore - open the Lab footer and use Restore my settings"
         end
         if run.moved then
           lines[#lines + 1] = "WARNING: movement or camera turning detected during the run"
@@ -527,7 +632,10 @@ local function create(parent)
         end
         for _, row in ipairs(repRows) do
           if row.notTestable then
-            lines[#lines + 1] = string.format("- %s: not tested (%s)", L(row.labelKey or "?"), tostring(row.reason))
+            local why = row.reason == "restore-mismatch"
+                and "restore read-back mismatch (value did not come back)"
+              or tostring(row.reason)
+            lines[#lines + 1] = string.format("- %s: not tested (%s)", L(row.labelKey or "?"), why)
           else
             -- pre.5: full measurement detail — triples, per-test gains,
             -- baseline difference, restored value, movement flag
@@ -567,12 +675,24 @@ local function create(parent)
               )
             end
             if row.valueFrom ~= nil and row.valueTo ~= nil then
-              lines[#lines + 1] = string.format(
-                "  value: %s -> %s%s",
-                tostring(row.valueFrom),
-                tostring(row.valueTo),
-                row.valueAfter ~= nil and (" -> " .. tostring(row.valueAfter) .. " (restored)") or ""
-              )
+              if row.bigStep then
+                -- pre.7 A3: big-step rows say so in the report too
+                lines[#lines + 1] = "  "
+                  .. Lfmt(
+                    "big_step_pattern",
+                    tostring(row.valueFrom),
+                    tostring(row.valueTo),
+                    tostring(row.valueAfter ~= nil and row.valueAfter or row.valueTo)
+                  )
+                lines[#lines + 1] = "  " .. L("big_step_note")
+              else
+                lines[#lines + 1] = string.format(
+                  "  value: %s -> %s%s",
+                  tostring(row.valueFrom),
+                  tostring(row.valueTo),
+                  row.valueAfter ~= nil and (" -> " .. tostring(row.valueAfter) .. " (restored)") or ""
+                )
+              end
             end
           end
         end
@@ -638,12 +758,27 @@ local function create(parent)
     if #sortedRows == 0 then
       empty:Show()
       summary:Hide()
+      capLine:Hide()
+      setSummaryHeight(SUMMARY_H)
       runHeader:SetText("")
       applyBtn:Disable()
       return
     end
     empty:Hide()
     summary:Show()
+    -- pre.7: the cap warning only after a run, and only when the run's own
+    -- FPS came within 10% of the Max FPS cap it read
+    local caps = run.caps
+    if caps and caps.limited then
+      capLine:SetText(
+        Lfmt("cap_limited_pattern", caps.measuredFps or 0, caps.maxfps or 0)
+      )
+      capLine:Show()
+      setSummaryHeight(SUMMARY_H + 20)
+    else
+      capLine:Hide()
+      setSummaryHeight(SUMMARY_H)
+    end
     local zone = (run.zone or "?")
     if run.subzone and run.subzone ~= "" then
       zone = zone .. " / " .. run.subzone

@@ -24,6 +24,7 @@ settings.defaults = {
     ignoreSeconds = 4, -- pre.5: warm-up tail dropped before measuring
     defaultMode = "quick", -- "quick" | "thorough"
     fpsStutterFloor = 30,
+    bigStep = false, -- pre.7: remembered Big step toggle (lowest values)
   },
   log = {
     enabled = false,

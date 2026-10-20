@@ -1,14 +1,19 @@
 -- Engine/LabRunner.lua — the A-B-A heart of the lab (brief section 5.3,
--- reworked in pre.5 for measurement stability). Every phase is the same
--- shape: [apply or restore action] -> settle (6 s) -> warm-up (4 s, ignored
--- by Stats) -> measured sample (sampleSeconds, the slider value). Quick
--- plans A-B-A (3 phases); Thorough plans A-B-A-B-A-B-A (7 phases): 4 shared
--- baselines and 3 tests, each test compared against the average of its two
--- neighbouring baselines, reported as the median gain plus the min-max
--- spread. Baselines diverging more than Stats.UNRELIABLE_PCT percent mark
--- the row "Not reliable" with the actual difference for the card. A
--- movement watchdog (GetUnitSpeed/GetPlayerFacing, probed once) warns when
--- the player moves or turns during a run; a read-only caps preflight reads
+-- reworked in pre.5 for measurement stability, pre.7 for the engine update).
+-- Every phase is the same shape: [apply or restore action] -> settle (6 s)
+-- -> warm-up (4 s, ignored by Stats) -> measured sample (sampleSeconds, the
+-- slider value). Quick plans A-B-A (3 phases); Thorough plans A-B-A-B-A-B-A
+-- (7 phases): 4 shared baselines and 3 tests, each test compared against the
+-- average of its two neighbouring baselines, reported as the median gain plus
+-- the min-max spread. Baselines diverging more than Stats.UNRELIABLE_PCT
+-- percent mark the row "Not reliable" with the actual difference for the
+-- card. Pre.7: a 15 s warm-up runs before the first baseline, the job order
+-- is shuffled (combine last), Big step mode steps each setting to its lowest
+-- value (Body Quota at half), every final restore is verified by read-back
+-- (mismatch -> Not testable + Restore warning), and the Max FPS cap warning
+-- is decided after the run — measured FPS within 10% of the cap. A movement
+-- watchdog (GetUnitSpeed/GetPlayerFacing, probed once) warns when the
+-- player moves or turns during a run; a read-only caps preflight reads
 -- Max FPS/VSync before the run and never writes them. Records the
 -- apply-moment hitch (worst sample within 1 s after each set). Cancel,
 -- combat, foreign CVar changes and read-back mismatches all restore through
@@ -28,10 +33,10 @@ Lab.moved = false -- movement watchdog fired during the last run (pre.5)
 local mode = "quick"
 
 Lab.progress = {
-  phase = "", -- "sample" | "settle" | "warmup" | "applying" | "restoring" | ""
+  phase = "", -- "prewarm" | "sample" | "settle" | "warmup" | "applying" | "restoring" | ""
   cand = nil,
   labelKey = nil,
-  pass = 1, -- current phase within the plan (pre.5)
+  pass = 1, -- current phase within the plan (pre.5); 0 = pre-roll (pre.7)
   passes = 1, -- phase count: Quick 3, Thorough 7 (pre.5)
   stepFrom = nil,
   stepTo = nil,
@@ -56,6 +61,9 @@ local hitchWindow = 0
 local hitchApply = nil -- worst FPS in the 1 s window after the apply (review I4)
 local anyHitch = false
 local worstHitchFps = nil
+
+local bigStep = false -- pre.7: Big step mode for the current run (db toggle)
+local runOrder = {} -- pre.7: shuffled job ids for the report ("run.order")
 
 -- pre.5: movement watchdog state (ticked from Lab.OnSample, 4 Hz)
 local moveAccum = 0 -- seconds of real movement (0.25 per moving sample)
@@ -114,12 +122,30 @@ local function longTotal(snap)
   return snap.d50 + snap.d100 + snap.d500 + snap.d1000
 end
 
--- step down by exactly one; unknown ranges stay within [0, current]
-local function computeLower(cand, num)
+-- step down by exactly one; unknown ranges stay within [0, current].
+-- Pre.7 Big step: the lowest value per setting (Body Quota at half, since
+-- "lowest" for an experimental count means fewer bodies, not necessarily 0).
+local function computeLower(cand, num, big)
   if type(num) ~= "number" then
     return nil
   end
   local lower
+  if big then
+    if cand.key == "bodyQuota" then
+      lower = math.floor(num / 2)
+      if cand.min ~= nil and lower < cand.min then
+        lower = cand.min
+      end
+    elseif cand.min ~= nil then
+      lower = cand.min
+    else
+      lower = 0
+    end
+    if lower >= num then
+      return nil -- already at (or below) the big-step target
+    end
+    return lower
+  end
   if cand.min ~= nil then
     lower = math.max(cand.min, num - 1)
   else
@@ -186,6 +212,7 @@ local function buildRow(j, before, after, gain, noisyFlag, hitchFlag, hitchFps, 
     cost = cost,
     valueFrom = j.baseValue,
     valueTo = j.lowers and j.lowers[1] or nil,
+    bigStep = bigStep, -- pre.7: Results shows "Big step: A -> B -> A" per card
     changed = jobMoved, -- pre.5: movement watchdog flag for this job
     changes = changes,
   }
@@ -329,6 +356,19 @@ completeJob = function()
   row.spreadMax = sorted[#sorted]
   row.baselinePct = baselinePct
   row.unreliable = unreliable
+  -- pre.7: baseline stats the Results threshold uses (mean for the 5% bar,
+  -- max-min gap for "bigger than the baselines wandered anyway")
+  row.baselineMean = before
+  local bMin, bMax = baselines[1], baselines[1]
+  for i = 2, #baselines do
+    if baselines[i] < bMin then
+      bMin = baselines[i]
+    end
+    if baselines[i] > bMax then
+      bMax = baselines[i]
+    end
+  end
+  row.baselineSpread = bMax - bMin
   -- values triple: from -> to -> read back after the final restore
   row.valueAfter = tonumber(ns.cvarGuard.Read(j.keys[1]))
   if row.changes then
@@ -336,6 +376,34 @@ completeJob = function()
       local ch = row.changes[i]
       ch.after = tonumber(ns.cvarGuard.Read(ch.key))
     end
+  end
+  -- pre.7 A1: verify the final restore by reading back. A value that did not
+  -- come back makes the row untrustworthy and the settings wrong: mark it
+  -- Not testable so Results tells the owner to use Restore.
+  local restoredOk = true
+  local function stillHere(key, expect)
+    local now = tonumber(ns.cvarGuard.Read(key))
+    if expect == nil or now == nil then
+      return true -- nothing to compare: keep the row (guard restore already warned)
+    end
+    return math.abs(now - expect) <= 0.0005
+  end
+  if not stillHere(j.keys[1], row.valueFrom) then
+    restoredOk = false
+  end
+  if restoredOk and row.changes then
+    for i = 1, #row.changes do
+      local ch = row.changes[i]
+      if not stillHere(ch.key, ch.from) then
+        restoredOk = false
+        break
+      end
+    end
+  end
+  if not restoredOk then
+    row.notTestable = true
+    row.reason = "restore-mismatch"
+    row.restoreFailed = true
   end
   Lab.progress.gain = gain
   Lab.progress.noisy = unreliable
@@ -448,7 +516,7 @@ function ns.lab.StartJob()
     local cand = j.cands[i]
     local num = tonumber(ns.cvarGuard.Read(j.keys[i]))
     fromValues[i] = num
-    local lower = computeLower(cand, num)
+    local lower = computeLower(cand, num, bigStep)
     if lower == nil then
       rows[#rows + 1] = buildRow(j, nil, nil, nil, false, false, nil, true, "already-lowest")
       advanceJob()
@@ -474,6 +542,31 @@ function ns.lab.FinishRun()
   end
   Lab.activeRunId = runSeq
   local snap = ns.context.Snapshot()
+  -- pre.7: the cap warning only means something after measurement — flag it
+  -- when the run's own FPS came within 10% of the Max FPS cap it read pre-run
+  if type(Lab.caps) == "table" then
+    local maxFps = 0
+    for _, r in ipairs(rows) do
+      if not r.notTestable then
+        local vals = { r.fpsBefore, r.fpsTest, r.fpsAfter, r.before, r.after }
+        for i = 1, 5 do
+          local n = tonumber(vals[i])
+          if n and n > maxFps then
+            maxFps = n
+          end
+        end
+      end
+    end
+    Lab.caps.measuredFps = maxFps
+    Lab.caps.limited = (Lab.caps.maxfps and Lab.caps.maxfps > 0 and maxFps >= Lab.caps.maxfps * 0.9) or nil
+  end
+  local restoreFailed = false
+  for _, r in ipairs(rows) do
+    if r.restoreFailed then
+      restoreFailed = true
+      break
+    end
+  end
   local run = {
     id = runSeq,
     t = GetTime(),
@@ -483,7 +576,10 @@ function ns.lab.FinishRun()
     mode = mode,
     client = (ns.compat and ns.compat.chip) or "",
     moved = runMoved, -- pre.5: movement watchdog fired during this run
-    caps = Lab.caps, -- pre.5: read-only Max FPS/VSync preflight for the report
+    caps = Lab.caps, -- pre.5/7: preflight + post-run "was it capped" for the report
+    bigStep = bigStep, -- pre.7: Big step mode used for this run
+    order = runOrder, -- pre.7: shuffled test order for the report
+    restoreFailed = restoreFailed, -- pre.7 A1: a value did not read back after restore
     rows = rows,
   }
   Lab.lastRun = run
@@ -506,14 +602,16 @@ end
 
 -- ------------------------------------------------------------- public -----
 
--- pre.5: read-only caps preflight. A Max FPS cap or VSync limits what a run
--- can measure, so the run warns up front (banner, overlay line, report
--- header). Candidate names are probed, never written — this file must not
--- contain a single SetCVar for these keys (owner: "check, never set").
+-- pre.5/7: read-only caps preflight. A Max FPS cap or VSync can limit what a
+-- run can measure, so the values are recorded up front for the report; the
+-- actual "capped" warning is decided after the run against the measured FPS
+-- (pre.7: only within 10% of the cap). Candidate names are probed, never
+-- written — this file must not contain a single SetCVar for these keys
+-- (owner: "check, never set").
 local CAP_CANDIDATES = { "maxfps", "renderFrameRateCap" }
 
 local function readCaps()
-  local caps = { maxfps = nil, capName = nil, vsync = false, warnings = {} }
+  local caps = { maxfps = nil, capName = nil, vsync = false, limited = nil, measuredFps = nil }
   if not (C_CVar and C_CVar.GetCVar) then
     return caps -- no CVar API at all: Lab.Run already gates on the cvar feature
   end
@@ -532,13 +630,19 @@ local function readCaps()
   if okV and (vs == "1" or vs == 1 or vs == true) then
     caps.vsync = true
   end
-  if caps.maxfps and caps.maxfps > 0 then
-    caps.warnings[#caps.warnings + 1] = "maxfps"
-  end
-  if caps.vsync then
-    caps.warnings[#caps.warnings + 1] = "vsync"
-  end
   return caps
+end
+
+-- pre.7: Fisher-Yates shuffle of the test order so measurement drift (cold
+-- cache, long-frame bursts) cannot systematically favour one setting. The
+-- combine-confirmation job is appended after the shuffle so it always runs
+-- last (it needs this run's results to be meaningful anyway).
+local function shuffleJobs(list)
+  -- WoW seeds math.random per session; no explicit seed needed here.
+  for i = #list, 2, -1 do
+    local j = math.random(i)
+    list[i], list[j] = list[j], list[i]
+  end
 end
 
 function Lab.Run(runMode, selectedIds)
@@ -559,12 +663,14 @@ function Lab.Run(runMode, selectedIds)
     return false, "instance"
   end
   mode = (runMode == "thorough") and "thorough" or "quick"
+  bigStep = (ns.db and ns.db.settings and ns.db.settings.lab and ns.db.settings.lab.bigStep) and true or false
   plan = buildPlan()
   jobs = {}
   jobIndex = 1
   rows = {}
   snaps = {}
   phaseIdx = 1
+  runOrder = {}
   anyHitch, worstHitchFps = false, nil
   moveAccum, turnAccum, lastFacing = 0, 0, nil
   jobMoved, runMoved = false, false
@@ -581,6 +687,7 @@ function Lab.Run(runMode, selectedIds)
       }
     end
   end
+  shuffleJobs(jobs)
   -- optional final confirmation: combine the settings that gained the most
   if selectedIds["__combine__"] then
     local top = {}
@@ -617,11 +724,28 @@ function Lab.Run(runMode, selectedIds)
     Lab.lastError = { key = "noselect" }
     return false, "noselect"
   end
+  for i = 1, #jobs do
+    runOrder[i] = jobs[i].id
+  end
   Lab.state = "running"
   Lab.lastError = nil
   Lab.activeRunId = runSeq + 1
   ns.meter.Acquire()
-  ns.lab.StartJob() -- runs plan[1] (entry baseline) immediately
+  -- pre.7: 15 s warm-up before the first baseline — the crowd needs to
+  -- settle before anything is measured (owner item 4)
+  Lab.progress.phase = "prewarm"
+  Lab.progress.cand = nil
+  Lab.progress.labelKey = nil
+  Lab.progress.pass = 0
+  Lab.progress.passes = 0
+  Lab.progress.stepFrom = nil
+  Lab.progress.stepTo = nil
+  Lab.progress.gain = nil
+  Lab.progress.noisy = false
+  Lab.progress.hitch = false
+  Lab.progress.jobIndex = 0
+  Lab.progress.jobCount = #jobs
+  setPhase(15, ns.lab.StartJob)
   return true
 end
 
@@ -647,7 +771,8 @@ function Lab.IsRunning()
 end
 
 -- estimated wall-clock seconds for the Run button (pre.5: every phase costs
--- settle + warm-up + measured sample + ~1 s of actions)
+-- settle + warm-up + measured sample + ~1 s of actions; pre.7 adds the 15 s
+-- pre-roll before the first baseline)
 function Lab.EstimateSeconds(runMode, jobCount)
   local s = labSettings()
   local phases = (runMode == "thorough") and 7 or 3
@@ -655,7 +780,7 @@ function Lab.EstimateSeconds(runMode, jobCount)
     + (tonumber(s.ignoreSeconds) or 4)
     + (tonumber(s.sampleSeconds) or 8)
     + 1
-  return jobCount * phases * perPhase
+  return 15 + (jobCount * phases * perPhase)
 end
 
 function Lab.Progress()

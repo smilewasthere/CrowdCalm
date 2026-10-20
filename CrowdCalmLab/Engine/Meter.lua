@@ -91,9 +91,13 @@ local function onTick()
     Meter.live.longPerMin = (Meter.totals[1] + Meter.totals[2] + Meter.totals[3] + Meter.totals[4]) / minutes
   end
 
-  -- 1 Hz history for the Overview sparkline
+  -- 1 Hz history for the Overview sparkline (same rule as the stutter log:
+  -- frames >= 100 ms, or 3+ frames >= 50 ms in one tick)
   if okProfiler then
     secAccum = secAccum + scratch[2] + scratch[3] + scratch[4]
+    if scratch[1] >= 3 then
+      secAccum = secAccum + 1
+    end
   end
   tickN = tickN + 1
   if tickN % HISTORY_EVERY == 0 then

@@ -55,8 +55,12 @@ local function create(parent)
 
   local crowdCard = heroCard(frame, cardW, "hero_crowd_title")
   crowdCard:SetPoint("TOPLEFT", frameCard, "TOPRIGHT", 12, 0)
-  -- pre.4: gauge keeps the arc clear of the zone line (gauge top edge
-  -- sits at y49 of the 120 px card; zone ends at y44)
+  -- pre.7: soft glow behind the dome (created before the gauge so the arc
+  -- draws over it); tint follows the ramp color each refresh
+  local gaugeGlow = crowdCard:CreateTexture(nil, "ARTWORK")
+  gaugeGlow:SetTexture(Skin.mediaPath .. "glow.tga")
+  gaugeGlow:SetSize(156, 88)
+  gaugeGlow:SetPoint("BOTTOM", crowdCard, "BOTTOM", 0, 2)
   local gauge = Widgets.ArcGauge(crowdCard, 130)
   gauge:SetPoint("BOTTOM", crowdCard, "BOTTOM", 0, 6)
   -- Quiet/Packed end labels sit in the two empty corners of the
@@ -67,10 +71,9 @@ local function create(parent)
   local pLab = Widgets.Text(crowdCard, "small", L("crowd_packed"))
   pLab:SetPoint("TOPRIGHT", gauge, "TOPRIGHT", -2, -1)
   Skin.ColorText(pLab, ns.palette.textDim)
-  local zoneText = Widgets.Text(crowdCard, "small", "")
-  zoneText:SetPoint("TOP", crowdCard.title, "BOTTOM", 0, -6)
   -- pre.6: pivot pip at the arc's baseline center + a crowd word readout
-  -- inside the dome, tinted with the active ramp color
+  -- inside the dome, tinted with the active ramp color (pre.7: the zone
+  -- line was removed from this card on the owner's request)
   local pip = crowdCard:CreateTexture(nil, "ARTWORK")
   pip:SetTexture(Skin.mediaPath .. "gauge_pip.tga")
   pip:SetSize(10, 10)
@@ -128,6 +131,10 @@ local function create(parent)
   local rowW = math.floor(parent:GetWidth() - pad * 2 - 8)
   local labelW = math.floor(rowW * 0.5)
   local valueW = 90
+  -- pre.7: the track/fill width is computed from the layout numbers, not
+  -- queried from the texture (a 0 px read during the first refresh left the
+  -- fill at its 1 px fallback)
+  local trackW = rowW - (labelW + 10) - (valueW + 10)
   local topRows = {}
   for i = 1, 3 do
     local row = CreateFrame("Frame", nil, frame)
@@ -179,13 +186,7 @@ local function create(parent)
     readout:SetText(L("crowd_" .. label) or label)
     Skin.ColorText(readout, rc)
     pip:SetVertexColor(rc.r, rc.g, rc.b, 1)
-    local zone = ns.context.Zone()
-    local sub = ns.context.SubZone()
-    if sub ~= "" then
-      zone = zone .. " / " .. sub
-    end
-    zoneText:SetText(zone)
-    Skin.ColorText(zoneText, ns.palette.textDim)
+    gaugeGlow:SetVertexColor(rc.r, rc.g, rc.b, 0.15)
 
     local run = ns.db.results and ns.db.results[#ns.db.results]
     local sorted = {}
@@ -221,7 +222,7 @@ local function create(parent)
         tr.track:Show()
         tr.fill:Show()
         local ratio = math.min(1, math.abs(row.gain) / maxAbs)
-        tr.fill:SetWidth(math.max(2, math.floor(tr.track:GetWidth() * ratio)))
+        tr.fill:SetWidth(math.max(2, math.floor(trackW * ratio)))
         local c = row.gain >= 0 and ns.palette.gainColor() or ns.palette.costColor()
         tr.fill:SetVertexColor(c.r, c.g, c.b, 0.95)
       else
