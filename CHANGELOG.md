@@ -43,9 +43,9 @@ specified.
 - **Lab recommendation honesty:** a row is only recommended when the
   gain is at least 5% of its baseline AND larger than the baseline gap
   (max-min of that test's baselines), otherwise the chip says "No clear
-  gain"; a negative gain bigger than the baseline gap gets its own
-  "Slower" chip. The Results "Best" medal only marks rows classified
-  "Worth it".
+  gain" (the copy report also prints the bar such a row missed); a
+  negative gain bigger than the baseline gap gets its own "Slower" chip.
+  The Results "Best" medal only marks rows classified "Worth it".
 - **Cap warning only when it matters:** Max FPS is read again after the
   run and the warning (Results line, report line, completion banner)
   appears only when the measured FPS was within 10% of the cap. The
@@ -58,7 +58,7 @@ specified.
   What it does / Safety promise / Privacy / This addon's own cost -
   a self-check card with a memory button, and the URL box at the bottom.
 - **Lab guide strip restyle:** steps become numbered badge chips with
-  per-state colors; labels shortened so the six steps fit one row.
+  per-state colors; labels shortened so the four steps fit one row.
 - **Overview polish:** zone name moved out of the gauge (it overlapped
   the dome at times), the dome glow is tinted with the active ramp
   color, and the best-from-last-run bars use a deterministic width
@@ -70,18 +70,20 @@ specified.
 
 ### Added
 
-- **Big step (opt-in checkbox, default off):** for every setting the
-  lab adds one job at the lowest allowed value (Body Quota at roughly
-  half the setting) to show whether the setting matters at all; cards
-  and the report show "Big step: A -> B -> A" plus the note "This shows
-  the setting matters, not that the lowest value is right for you."
+- **Big step (opt-in checkbox, default off):** every selected setting
+  is tested at its lowest allowed value (Body Quota at roughly half its
+  current value) instead of one step down, to show whether the setting
+  matters at all; cards and the report show "Big step: A -> B -> A"
+  plus the note "This shows the setting matters, not that the lowest
+  value is right for you."
 - **15 s pre-roll and job shuffle:** jobs start after a 15 second
   pre-roll (its own phase, measured FPS shown in the ring) and the
   order is shuffled every run; the combine job always runs last.
 - **Read-back verification:** every applied value is re-read
-  immediately (mismatch = "Not testable" for that row) and the final
-  restore is re-read too (mismatch = "Restore check failed" banner and
-  a report warning).
+  immediately (mismatch = "Not testable" for that row); every restore
+  phase is re-read too (mismatch = row "Not testable" + warning banner);
+  the final restore gets the same check (mismatch = "Restore check
+  failed" banner and a report warning).
 
 ### Fixed
 

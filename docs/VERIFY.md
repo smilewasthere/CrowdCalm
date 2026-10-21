@@ -292,10 +292,11 @@ note the result in this file (or tell the addon author).
 60. **Recommendation thresholds.** Run a test where the gain is small
     (under 5% of baseline or inside the baseline gap): the chip reads
     "No clear gain", the summary sentence drops the recommendation, and
-    no "Worth it" medal appears. Force a slower result (e.g. raise a
-    setting during a run): chip reads "Slower" (red) and the sentence
-    says the change made things worse. Only a gain >= 5% AND > baseline
-    gap gets "Worth it".
+    no "Worth it" medal appears; the copy report prints a
+    "- closest: ... needed +X.X" line showing the bar that was missed.
+    Force a slower result (e.g. raise a setting during a run): chip
+    reads "Slower" (red) and the sentence says the change made things
+    worse. Only a gain >= 5% AND > baseline gap gets "Worth it".
 61. **Cap warning is post-run and within 10%.** With `/console maxfps`
     set low enough to pin FPS near the cap: no banner appears when the
     run starts and no cap line shows on the overlay; after the run the
@@ -304,12 +305,13 @@ note the result in this file (or tell the addon author).
     none of them appear. `maxfps` is still never written. VSync stays
     informational on both states.
 62. **Big step job.** In Lab, check "Big step": every selected setting
-    gains one extra job at its lowest allowed value (Body Quota lands at
-    about half its range); estimate time grows accordingly. The card and
-    report show "Big step: A -> B -> A" plus the note about the setting
-    mattering; after the run the value is restored and re-read. Unchecked
-    (default), no big-step jobs run and the toggle state survives
-    `/reload`.
+    is tested at its lowest allowed value (Body Quota lands at about
+    half its current value) instead of one step down; the estimate stays
+    the same (same number of jobs). The card and report show
+    "Big step: A -> B -> A" plus the note about the setting mattering
+    (even on a Not-testable card); after the run the value is restored
+    and re-read. Unchecked (default), settings test one step down as
+    before and the toggle state survives `/reload`.
 63. **Pre-roll and shuffle.** Start a run: the first 15 seconds are a
     pre-warm phase (its own ring countdown, measured FPS visible, steps
     blanked), then jobs begin in a different order than the settings
@@ -322,11 +324,13 @@ note the result in this file (or tell the addon author).
     testable" with the mismatch reason instead of a fake gain. (Forced
     mismatch is hard to reproduce; verify the read-back code path at
     least runs on a normal run - no errors, all rows still valid.)
-65. **Final-restore check.** After the run all values are restored and
-    re-read; if any differs, the completion banner reads "Restore check
-    failed" (priority over the cap warning and "Run complete") and the
-    report carries the warning line. Normal runs finish with the plain
-    success banner.
+65. **Restore checks.** Every restore phase is re-read; a mismatch marks
+    that job's row "Not testable" and shows the banner "A setting did not
+    read back — use 'Restore my settings' in the footer." The same
+    check runs after the final restore: a mismatch raises that banner
+    (priority over the cap warning and "Run complete") plus a report
+    warning line. Normal runs finish with the plain success banner and
+    no restore warnings.
 66. **Stutter rule.** A tick logs only for a frame >= 100 ms, 3+ frames
     >= 50 ms in one tick, or 2 consecutive ticks under the FPS floor;
     single 50-99 ms frames never appear. The first ~5 s after a
@@ -350,7 +354,7 @@ note the result in this file (or tell the addon author).
     (What it does / Safety promise / Privacy / This addon's own cost);
     self-check card with a working memory button; URL box at the bottom;
     no old paragraphs linger from pre.6.
-70. **Lab guide strip + run banner.** Six numbered badge chips fit one
+70. **Lab guide strip + run banner.** Four numbered badge chips fit one
     row without overlap; the Big step checkbox has its tooltip; during
     the run the banner always reads as running (not success text);
     guide strip only changes on the Lab page (other pages unaffected).

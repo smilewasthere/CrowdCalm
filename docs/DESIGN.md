@@ -198,12 +198,14 @@ intentional globals are:
 23. **Run plan gained a pre-roll, a shuffle and an opt-in big step
     (pre.7, owner spec).** Jobs start after a 15 s pre-warm phase (its
     own ring, counted in the estimate) and run in a shuffled order with
-    the combine job pinned last; the optional "Big step" checkbox adds
-    one job per setting at its lowest allowed value (Body Quota ~ half),
-    labeled "Big step: A -> B -> A" with the "shows the setting matters"
-    note. Values are re-read after every apply (mismatch = "Not
-    testable") and after the final restore (mismatch = restore-failed
-    banner + report warning) instead of trusting SetCVar.
+    the combine job pinned last; the optional "Big step" checkbox makes
+    every job test its setting at the lowest allowed value (Body Quota
+    ~ half the current value) instead of one step down, labeled
+    "Big step: A -> B -> A" with the "shows the setting matters" note.
+    Values are re-read after every apply (mismatch = "Not testable"),
+    after every restore phase (mismatch = row "Not testable" + banner)
+    and after the final restore (mismatch = restore-failed banner +
+    report warning) instead of trusting SetCVar.
 24. **Addons page lists enabled addons only (pre.7, owner request).**
     The brief's cost panel showed every addon; disabled rows cluttered it,
     so the list filters to enabled ones (Blizzard included, marked "not

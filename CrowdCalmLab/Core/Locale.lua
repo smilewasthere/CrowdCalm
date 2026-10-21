@@ -91,6 +91,7 @@ local strings = {
   addons_disable_action = "Disable & Reload",
   addons_disabled_now = "%s disabled — reloading now.",
   err_disable_failed = "Could not disable that addon.",
+  err_reload_failed = "UI reload was blocked — run /reload manually.",
   selfcheck_own = "CrowdCalm Lab itself",
   selfcheck_target = "Target: well under 0.3 ms average with the window open.",
   col_addon = "Addon",

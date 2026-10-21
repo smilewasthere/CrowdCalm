@@ -175,17 +175,25 @@ local function create(parent)
           sound = "done", -- pre.7: the action is audible, not just a click
           onClick = function(self)
             local entry2 = row.currentEntry
-            if not entry2 then
+            if not entry2 or frame.reloading then
               return
             end
             Widgets.Confirm(Lfmt("addons_disable_confirm", entry2.title), function()
               local ok, err = ns.addonCost.DisableOnReload(entry2.name)
               if ok then
                 -- pre.7: one click disables AND reloads; the owner watches
-                -- the addon disappear on the other side of the reload
+                -- the addon disappear on the other side of the reload.
+                -- review I2: report a blocked ReloadUI instead of silently
+                -- doing nothing after the addon was already disabled.
+                frame.reloading = true
                 ns.ui.ShowBanner(Lfmt("addons_disabled_now", entry2.title), "gold", 6)
                 C_Timer.After(1.0, function()
-                  pcall(ReloadUI)
+                  local okReload = pcall(ReloadUI)
+                  if not okReload then
+                    frame.reloading = false
+                    ns.sound.Play("error")
+                    ns.ui.ShowBanner(L("err_reload_failed"), "danger", 5)
+                  end
                 end)
               else
                 ns.sound.Play("error")
@@ -205,7 +213,9 @@ local function create(parent)
       if cpu then
         row.cpuBar:SetWidth(math.max(1, math.min(80, (cpu / 2) * 80)))
         local gain = ns.palette.gainColor()
-        row.cpuBar:SetColorTexture(gain.r, gain.g, gain.b, 0.8)
+        -- review M7: SetVertexColor keeps the bar_fill.tga gradient;
+        -- SetColorTexture would replace the texture with a flat color
+        row.cpuBar:SetVertexColor(gain.r, gain.g, gain.b, 0.8)
       else
         row.cpuBar:SetWidth(1)
       end

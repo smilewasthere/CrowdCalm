@@ -143,7 +143,7 @@ local function rowCard(parent, row, isBest, listWidth)
       extra = extra + 1
     end
   end
-  card:SetHeight(row.notTestable and 44 or (100 + extra * 14))
+  card:SetHeight(row.notTestable and (row.bigStep and 72 or 44) or (100 + extra * 14))
 
   local name = Widgets.Text(card, "body", L(row.labelKey or row.key or "?"))
   name:SetPoint("TOPLEFT", 12, -8)
@@ -195,6 +195,29 @@ local function rowCard(parent, row, isBest, listWidth)
     local fs = Widgets.Text(card, "small", L("not_testable") .. " — " .. reason)
     fs:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
     Skin.ColorText(fs, ns.palette.textDim)
+    -- pre.7 A3 (review M14): big-step rows explain themselves even when
+    -- the row never produced a measurement.
+    if row.bigStep then
+      local bigText
+      if row.changes and #row.changes > 1 then
+        bigText = Lfmt("change_multi", #row.changes)
+      elseif row.valueFrom ~= nil and row.valueTo ~= nil then
+        bigText = Lfmt(
+          "big_step_pattern",
+          tostring(row.valueFrom),
+          tostring(row.valueTo),
+          tostring(row.valueAfter ~= nil and row.valueAfter or row.valueTo)
+        )
+      end
+      if bigText then
+        local bigFs = Widgets.Text(card, "small", bigText)
+        bigFs:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -2)
+        Skin.ColorText(bigFs, ns.palette.textDim)
+        local noteFs = Widgets.Text(card, "small", L("big_step_note"))
+        noteFs:SetPoint("TOPLEFT", bigFs, "BOTTOMLEFT", 0, -2)
+        Skin.ColorText(noteFs, ns.palette.textDim)
+      end
+    end
     return card
   end
 
@@ -585,8 +608,9 @@ local function create(parent)
             "vsync=" .. (c.vsync and "on" or "off"),
           }
           if c.limited then
+            -- review M8: do not read as "measured == 90%"
             bits[#bits + 1] = string.format(
-              "WARNING: frame cap limited these results (measured %.0f FPS at 90%% of a %.0f FPS cap)",
+              "WARNING: frame cap limited these results (measured %.0f FPS against a %.0f FPS cap, at or over 90%%)",
               c.measuredFps or 0,
               c.maxfps or 0
             )
@@ -629,6 +653,23 @@ local function create(parent)
           end
         else
           lines[#lines + 1] = "- RECOMMEND: none (no clear wins in this crowd)"
+          -- pre.7 (review I3): say what the bar was, so "No clear gain"
+          -- is actionable truth rather than a dead end.
+          local best = repRows[1]
+          if best and not best.notTestable and type(best.gain) == "number" then
+            local mean, gap = baselineStats(best)
+            if mean then
+              local needed = math.max(0.05 * mean, gap or 0)
+              lines[#lines + 1] = string.format(
+                "- closest: %s at %+.1f FPS needed %+.1f (5%% of %.1f baseline, gap %.1f)",
+                L(best.labelKey or "?"),
+                best.gain,
+                needed,
+                mean,
+                gap or 0
+              )
+            end
+          end
         end
         for _, row in ipairs(repRows) do
           if row.notTestable then

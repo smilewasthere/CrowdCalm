@@ -405,6 +405,13 @@ completeJob = function()
     row.reason = "restore-mismatch"
     row.restoreFailed = true
   end
+  if j.restoreMismatch and not row.notTestable then
+    -- pre.7 A1 (review I1): an intermediate restore phase mismatched even
+    -- though the final restore came back — the baselines in between lie.
+    row.notTestable = true
+    row.reason = "restore-mismatch"
+    row.restoreFailed = true
+  end
   Lab.progress.gain = gain
   Lab.progress.noisy = unreliable
   Lab.progress.hitch = anyHitch
@@ -460,7 +467,20 @@ runPhase = function()
     hitchWorst = nil
     hitchWindow = 1.0
     for i = 1, #j.keys do
-      ns.cvarGuard.Restore(j.keys[i])
+      local ok, err = ns.cvarGuard.Restore(j.keys[i])
+      -- pre.7 A1 (review I1): a value that does not read back after an
+      -- intermediate restore corrupts the baselines around it. Flag the
+      -- job so completeJob marks the row Not testable even when the
+      -- final restore lands. "queued" is not a mismatch.
+      if not ok and type(err) == "string" and err:sub(1, 9) == "mismatch:" then
+        j.restoreMismatch = true
+        if not j.restoreBannerShown then
+          j.restoreBannerShown = true
+          if ns.ui and ns.ui.ShowBanner and ns.L then
+            pcall(ns.ui.ShowBanner, ns.L("restore_failed_banner"), "danger", 6)
+          end
+        end
+      end
     end
   end
 

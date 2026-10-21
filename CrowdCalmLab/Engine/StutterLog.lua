@@ -177,7 +177,9 @@ local function onTick()
   e.d500 = scratch[3]
   e.d1000 = scratch[4]
   e.runId = (ns.lab and ns.lab.activeRunId) or 0
-  e.sev = severityFor(low and not freeze and not micro)
+  -- low streak outranks a lone micro burst (brief sev map: low -> 2,
+  -- micro -> 1); freeze checks inside severityFor still win.
+  e.sev = severityFor(low)
   ring:Push(e)
 end
 
